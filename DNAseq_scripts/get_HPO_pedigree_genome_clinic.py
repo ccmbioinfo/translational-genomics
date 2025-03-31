@@ -204,14 +204,33 @@ def get_HPO(proband_id: str) -> pd.DataFrame:
 
         return hpo_df
 
+def process_sample(id, fam, auth, pid_url, pedigree_url):
+    response = requests.get(f"{pid_url}/{id}", auth=auth)
+    try:
+        pid = response.json().get('id')
+        params={"action": "familyinfo", "document_id": pid}
+        response = requests.get(pedigree_url, params=params, auth=auth)
+        ped_json = response.json()
+        members, proband_id = get_pedigree_info(ped_json)
+        write_pedigree(members, fam)
+        pid_proband = requests.get(f"{pid_url}/{proband_id}", auth=auth).json().get('id')
+        print(pid_proband)
+        HPO_df = get_HPO(pid_proband)
+        HPO_df = HPO_df[["Gene Symbol", "Gene ID", "Number of occurrences", "Features", "HPO IDs"]]
+        today = date.today()
+        today = today.strftime("%Y-%m-%d")
+        fam = fam.replace("_", "")
+        HPO_df.to_csv(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/DECODER/{fam}_HPO_{today}.txt", sep="\t", index=False)
+    except JSONDecodeError:
+        print(f"Error: did not retrieve HPO and pedigree information for {id}")
+
 parser = argparse.ArgumentParser(description='Process sample sheet and credentials files')
-parser.add_argument('-sample_sheet', help='Tab-separated sample sheet file', required=True)
+parser.add_argument('-sample_sheet', help='Tab-separated sample sheet file', required=False)
 parser.add_argument('-credentials', help='Credentials file containing username and password', required=True)
+parser.add_argument('-sample_id', help='Single sample ID to process', required=False)
 args = parser.parse_args()
 
-sample_sheet = pd.read_csv(args.sample_sheet, sep="\t")
-print(sample_sheet)
-credentials = pd.read_csv(args.credentials)
+credentials = pd.read_csv(args.credentials) 
 username = credentials["username"][0]
 password = credentials["password"][0]
 auth = (username, password)
@@ -220,29 +239,21 @@ pid_url="https://genomeclinic.ccm.sickkids.ca/rest/patients/eid/"
 pedigree_url=f"https://genomeclinic.ccm.sickkids.ca/get/PhenoTips/FamilyPedigreeInterface"
 
 def main():
-    sample_sheet["DECODER_family"] = sample_sheet["Decoder_ID"].str.split('.').str[0]
-    for id in sample_sheet["Decoder_ID"].values:
-        print(id)
+    if args.sample_sheet:
+        sample_sheet = pd.read_csv(args.sample_sheet, sep="\t")
+        sample_sheet["DECODER_family"] = sample_sheet["Decoder_ID"].str.split('.').str[0]
+        for id in sample_sheet["Decoder_ID"].values:
+            print(id)
+            fam = id.split(".")[0]
+            if '.03' in id: # proband ID
+                process_sample(id, fam, auth, pid_url, pedigree_url)
+    elif args.sample_id: 
+        id = args.sample_id
         fam = id.split(".")[0]
-        if '.03' in id: # proband ID
-            response = requests.get(f"{pid_url}/{id}", auth=auth)
-            try:
-                pid = response.json().get('id')
-                params={"action": "familyinfo", "document_id": pid}
-                response = requests.get(pedigree_url, params=params, auth=auth)
-                ped_json = response.json()
-                members, proband_id = get_pedigree_info(ped_json)
-                write_pedigree(members, fam)
-                pid_proband = requests.get(f"{pid_url}/{proband_id}", auth=auth).json().get('id')
-                print(pid_proband)
-                HPO_df = get_HPO(pid_proband)
-                HPO_df = HPO_df[["Gene Symbol", "Gene ID", "Number of occurrences", "Features", "HPO IDs"]]
-                today = date.today()
-                today = today.strftime("%Y-%m-%d")
-                fam = fam.replace("_", "")
-                HPO_df.to_csv(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/DECODER/{fam}_HPO_{today}.txt", sep="\t", index=False)
-            except JSONDecodeError:
-                pass
+        process_sample(id, fam, auth, pid_url, pedigree_url)
+    else:
+        print("Error: no sample ID or sample sheet provided")
+
 
 if __name__ == "__main__":
     main()
