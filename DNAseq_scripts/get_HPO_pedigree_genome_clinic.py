@@ -171,7 +171,7 @@ def get_HPO_IDs(proband_id: str) -> pd.DataFrame:
 
 def hpo_to_gene_mapping(hpo_ids: list) -> pd.DataFrame:
     """Map HPO terms to genes"""
-    hpo_mapping = pd.read_csv("/hpf/largeprojects/ccmbio/mcouse/temp/test_hpo_term_mapping/genes_to_phenotype.txt", sep="\t").drop(columns=["ncbi_gene_id", "frequency", "disease_id"])
+    hpo_mapping = pd.read_csv("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/download/2025-05-23_genes_to_phenotype.txt", sep="\t").drop(columns=["ncbi_gene_id", "frequency", "disease_id"])
     hpo_mapping = hpo_mapping.drop_duplicates()
     hpo_agg = hpo_mapping[hpo_mapping["hpo_id"].isin(hpo_ids)].groupby("gene_symbol").agg(lambda x:  ", ".join(x)).reset_index() # get genes associated with patient HPO terms 
 
