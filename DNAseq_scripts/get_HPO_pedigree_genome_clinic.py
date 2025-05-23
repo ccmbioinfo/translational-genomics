@@ -150,59 +150,99 @@ def write_pedigree(members: dict, family: str) -> None:
                 f"{family_id} {sample_id} {paternal_id} {maternal_id} {sex} {phenotype}\n"
             )
 
-def get_HPO(proband_id: str) -> pd.DataFrame:
-        """Query G4RD phenotips to get suggested genes derived from HPO terms for the proband"""
+def get_HPO_IDs(proband_id: str) -> pd.DataFrame:
+        """Query G4RD phenotips to get HPO terms for the proband"""
         hpo = requests.get(
             f"{base_url}/rest/patients/{proband_id}/suggested-gene-panels",
             auth=auth,
         )
 
         hpo = hpo.json()
-
-        hpo_df = pd.DataFrame(
-            columns=[
-                "Gene Symbol",
-                "Gene ID",
-                "Number of occurrences",
-                "Features",
-                "HPO IDs",
-            ], dtype=object
-        )
+        hpo_id = []
 
         for row in hpo["rows"]:
             terms = row["terms"]
-            name_translated = []
-            name = []
-            hpo_id = []
             for term in terms:
-                name_translated.append(term["name_translated"])
-                name.append(term["name"])
                 hpo_id.append(term["id"])
-            gene_symbol = row["gene_symbol"]
-            count = row["count"]
-            gene_id = row["gene_id"]
+        
+        hpo_id = list(set(hpo_id))
 
-            hpo_df = pd.concat(
-                [
-                    hpo_df,
-                    pd.DataFrame(
-                        [
-                            {
-                                "Gene Symbol": gene_symbol,
-                                "Gene ID": gene_id,
-                                "Number of occurrences": int(count),
-                                "Features": ", ".join(name_translated),
-                                "HPO IDs": ", ".join(hpo_id),
-                            }
-                        ]
-                    ),
-                ],
-                ignore_index=True,
-            )
-        if len(hpo_df) == 0:
-            print(f"Warning: participant {proband_id} has no HPO terms")
+        return hpo_id
 
-        return hpo_df
+def hpo_to_gene_mapping(hpo_ids: list) -> pd.DataFrame:
+    """Map HPO terms to genes"""
+    hpo_mapping = pd.read_csv("/hpf/largeprojects/ccmbio/mcouse/temp/test_hpo_term_mapping/genes_to_phenotype.txt", sep="\t").drop(columns=["ncbi_gene_id", "frequency", "disease_id"])
+    hpo_mapping = hpo_mapping.drop_duplicates()
+    hpo_agg = hpo_mapping[hpo_mapping["hpo_id"].isin(hpo_ids)].groupby("gene_symbol").agg(lambda x:  ", ".join(x)).reset_index() # get genes associated with patient HPO terms 
+
+    return hpo_agg
+
+def get_ensembl_from_hgnc(hpo_agg: pd.DataFrame) -> pd.DataFrame:
+    """Get Ensembl IDs for genes from HGNC mapping"""
+    hgnc_mapping = pd.read_csv("/hpf/largeprojects/ccmbio/ccmmarvin_shared/pacbio_longread_pilot_phase_1/annotate_SV/HPO/HGNC_ensembl_map.csv")
+    hpo_agg_ens = hpo_agg.merge(hgnc_mapping, left_on="gene_symbol", right_on="hgnc_symbol", how="left")
+    
+    return hpo_agg_ens
+
+def query_ensembl_batch(gene_symbols: list) -> dict:
+    """Query Ensembl REST API to get gene information for multiple genes at once"""
+    ensembl_url = "http://rest.ensembl.org/lookup/symbol/homo_sapiens"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    payload = {"symbols": gene_symbols}
+    
+    try:
+        response = requests.post(ensembl_url, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Create a mapping of gene symbol to Ensembl ID
+        result = {}
+        for symbol in gene_symbols:
+            if symbol in data:
+                result[symbol] = data[symbol]['id']
+            else:
+                result[symbol] = None
+        return result
+        
+    except (requests.RequestException, JSONDecodeError) as e:
+        print(f"Error querying Ensembl API: {e}")
+        return {}
+    
+def get_dup_genes(hpo_agg_ens: pd.DataFrame) -> list:
+    """Get duplicate genes from HGNC mapping"""
+    genes = []
+    dup_genes = []
+    for gene in hpo_agg_ens["gene_symbol"].values:
+        if gene not in genes:
+            genes.append(gene)
+        else:
+            if gene not in dup_genes:
+                dup_genes.append(gene)
+
+    return dup_genes
+
+def get_HPO_gene_mapping(hpo_ids: list) -> pd.DataFrame:
+    """Get HPO gene mapping based on patient HPO terms"""
+    hpo_agg = hpo_to_gene_mapping(hpo_ids) # map HPO terms to associated genes
+    hpo_agg_ens = get_ensembl_from_hgnc(hpo_agg) # get Ensembl IDs for genes from HGNC mapping
+    ens_ids = query_ensembl_batch(hpo_agg_ens[hpo_agg_ens["ensembl_gene_id"].isna()]["gene_symbol"].values.tolist()) # get Ensembl IDs for genes without an Ensembl ID after HGNC mapping
+    hpo_agg_ens.loc[hpo_agg_ens["ensembl_gene_id"].isna(), "ensembl_gene_id"] = hpo_agg_ens.loc[hpo_agg_ens["ensembl_gene_id"].isna(), "gene_symbol"].map(ens_ids)
+    dup_genes = get_dup_genes(hpo_agg_ens) # some genes are associated with multiple Ensembl IDs (possibly due to different versions over time). Query the REST API to get the latest Ensembl ID for these genes. 
+    dup_ens = query_ensembl_batch(dup_genes)
+    # Only update ensembl_gene_id for genes that exist in dup_ens dictionary
+    mask = hpo_agg_ens["gene_symbol"].isin(dup_ens.keys())
+    hpo_agg_ens.loc[mask, "ensembl_gene_id"] = hpo_agg_ens.loc[mask, "gene_symbol"].map(dup_ens)
+    hpo_agg_ens = hpo_agg_ens.drop_duplicates(subset=["gene_symbol", "hpo_id", "hpo_name", "hgnc_symbol", "ensembl_gene_id"])
+    # get number of patient HPO terms per gene
+    hpo_agg_ens["Number of occurrences"] = hpo_agg_ens["hpo_id"].str.split(",").str.len()
+    # rename columns 
+    hpo_agg_ens = hpo_agg_ens.rename(columns={"hpo_id": "HPO IDs", "hpo_name": "Features",  "ensembl_gene_id": "Gene ID", "hgnc_symbol": "Gene Symbol"})
+    hpo_agg_ens = hpo_agg_ens[["Gene Symbol", "Gene ID", "Number of occurrences", "Features", "HPO IDs"]]
+    
+    return hpo_agg_ens
 
 def process_sample(id, fam, auth, pid_url, pedigree_url):
     response = requests.get(f"{pid_url}/{id}", auth=auth)
@@ -215,8 +255,9 @@ def process_sample(id, fam, auth, pid_url, pedigree_url):
         write_pedigree(members, fam)
         pid_proband = requests.get(f"{pid_url}/{proband_id}", auth=auth).json().get('id')
         print(pid_proband)
-        HPO_df = get_HPO(pid_proband)
-        HPO_df = HPO_df[["Gene Symbol", "Gene ID", "Number of occurrences", "Features", "HPO IDs"]]
+        HPO_ids = get_HPO_IDs(pid_proband)
+        print(len(HPO_ids))
+        HPO_df = get_HPO_gene_mapping(HPO_ids)
         today = date.today()
         today = today.strftime("%Y-%m-%d")
         fam = fam.replace("_", "")
