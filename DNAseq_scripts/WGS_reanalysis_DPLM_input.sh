@@ -1,13 +1,16 @@
 #!/bin/bash
-# Set up crg2 pipeline run for sequences from SickKids DPLM clinical genetics lab
-# Usage: WGS_reanalysis_DPLM_input.sh <sample TSV file> <project>
-# Example:  sh WGS_reanalysis_DPLM_input.sh ../sample_sheets/DECODER/analysis_requests/analyses_DSK054_DSK045.tsv DECODER
+# Set up crg2 pipeline run for sequences from SickKids DPLM clinical genetics lab or GeneDx
+# Usage: WGS_reanalysis_DPLM_input.sh <sample TSV file> <project> <optional argument: name of fastq directory in /hpf/largeprojects/tgnode/data/>
+# The fastq directory is not required if it is a GeneDx sample
+# Example:  sh WGS_reanalysis_DPLM_input.sh ../../../sample_sheets/DECODER/analysis_requests/analyses_DSK054_DSK045.tsv DECODER fastq_20250107
+# Note: may need to enter dummy value into 'Notes' column (e.g. '.') so that analysis tsv is parsed properly
 
 set -euo pipefail
 
 # Input validation
 sample_file=$1
 project=$2
+fastq_dir=$3 # must provide if input is from DPLM
 
 if [ -z $sample_file ]; then
 	echo "Please provide a sample metadata TSV"
@@ -29,14 +32,17 @@ CREDS="PT_credentials.csv"
 METADATA_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/sample_sheets"
 ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/${project}"
 CRG2=~/crg2
-FASTQ_DIR="/hpf/largeprojects/tgnode/data/fastq_20241120"
 
+# get HPO terms and pedigree
+module load python/3.7.1
+python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $sample_file -credentials $CREDS
 
 while IFS=$'\t' read -r family sample_id decoder_id sample_type status notes dnastack lab 
 do
 	# Skip header
-	[ "$decoder_id" = "DecoderID" ] && continue
-	
+	echo $decoder_id
+	[ "$decoder_id" = "Decoder_ID" ] && continue
+
 	# Format IDs
 	crg2_decoder_id=$(echo "$decoder_id" | tr -d '_' | tr '.' '_') # e.g. convert DSK_018.03 to DSK018_03 so crg2 doesn't mess up wildcards
 	crg2_sample_id=$(echo "$crg2_decoder_id" | cut -d '_' -f2)
@@ -45,6 +51,7 @@ do
 	ANALYSIS_DIR_FAM="${ANALYSIS_DIR}/${family}/${sample_type}_reanalysis"
 	echo "Processing family: $family"
 	echo "Analysis directory: $ANALYSIS_DIR_FAM"
+	echo "Lab: $lab"
 
 	# Create and setup analysis directory if it doesn't exist
 	if [ ! -d "$ANALYSIS_DIR_FAM" ]; then
@@ -56,11 +63,11 @@ do
 		
 		# Update config file
 		sed -i "s/NA12878/$family/" "${ANALYSIS_DIR_FAM}/config_hpf.yaml"
-		[ "$sample_type" = "WGS" ] && sed -i "s/wes/wgs/" "${ANALYSIS_DIR_FAM}/config_hpf.yaml"
+		[ "$sample_type" = "SRWGS" ] && sed -i "s/wes/wgs/" "${ANALYSIS_DIR_FAM}/config_hpf.yaml"
 		
 		# Set HPO terms and pedigree
-		HPO="../HPO/${project}/${family}*"
-		pedigree="../pedigrees/${project}/${family}*"
+		HPO=$(ls /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/${project}/${family}* | tail -n 1)
+		pedigree=$(ls /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${family}* | tail -n 1)
 		if [ ! -f $HPO ]; then
 			echo "Warning: No HPO file found for family ${family}"
 		else
@@ -79,15 +86,26 @@ do
 	
 	# Add sample to samples.tsv
 	echo "$crg2_sample_id" >> "${ANALYSIS_DIR_FAM}/samples.tsv"
-
-	# Find and format fastq paths
-	R1=$(find "${FASTQ_DIR}" -name "*${sample_id}*R1*fastq.gz" | paste -sd "," -)
-	R2=$(find "${FASTQ_DIR}" -name "*${sample_id}*R2*fastq.gz" | paste -sd "," -)
-	
-	if [ -z "$R1" ] || [ -z "$R2" ]; then
-		echo "Warning: No fastq files found for sample ${sample_id}"
+	echo $lab
+	if [[ "$lab" == "DPLM" ]]; then
+		INPUT_DIR="/hpf/largeprojects/tgnode/data/$fastq_dir"
+		# Find and format fastq paths
+		R1=`echo  ${INPUT_DIR}/${sample_id}*/*${sample_id}*R1*fastq.gz | sed 's/ /,/g'`
+		R2=`echo  ${INPUT_DIR}/${sample_id}*/*${sample_id}*R2*fastq.gz | sed 's/ /,/g'`
+		
+		if [ -z "$R1" ] || [ -z "$R2" ]; then
+			echo "Warning: No fastq files found for sample ${sample_id}"
+		fi
+		
+		echo -e "$crg2_sample_id\tILLUMINA\t$R1\t$R2\t\t" >> "${ANALYSIS_DIR_FAM}/units.tsv"
+	else
+		INPUT_DIR="/hpf/largeprojects/tgnode/data/GeneDx/${family}"
+		CRAM=$(find "${INPUT_DIR}" -name "*${sample_id}.cram")
+		if [ -z "$CRAM" ]; then
+			echo "Warning: No cram file found for sample ${sample_id}"
+		fi
+		echo -e "$crg2_sample_id\tILLUMINA\t\t\t\t$CRAM" >> "${ANALYSIS_DIR_FAM}/units.tsv"
 	fi
-	
-	echo -e "$crg2_sample_id\tILLUMINA\t$R1\t$R2\t\t" >> "${ANALYSIS_DIR_FAM}/units.tsv"
+		
 	
 done < "${sample_file}"
