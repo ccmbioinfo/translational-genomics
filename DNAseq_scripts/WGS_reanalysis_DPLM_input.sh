@@ -37,7 +37,7 @@ CRG2=~/crg2
 module load python/3.7.1
 python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $sample_file -credentials $CREDS
 
-while IFS=$'\t' read -r family sample_id decoder_id sample_type status notes dnastack lab 
+while IFS=$'\t' read -r family sample_id decoder_id sample_type status notes dnastack lab lims_id
 do
 	# Skip header
 	echo $decoder_id
@@ -92,12 +92,19 @@ do
 		# Find and format fastq paths
 		R1=`echo  ${INPUT_DIR}/${sample_id}*/*${sample_id}*R1*fastq.gz | sed 's/ /,/g'`
 		R2=`echo  ${INPUT_DIR}/${sample_id}*/*${sample_id}*R2*fastq.gz | sed 's/ /,/g'`
+		test_file=`echo $R1 | cut -d',' -f1`
+		echo $test_file
 		
-		if [ -z "$R1" ] || [ -z "$R2" ]; then
-			echo "Warning: No fastq files found for sample ${sample_id}"
+		if [ ! -f "$test_file" ]; then
+			echo "Warning: No fastq files found for sample ${sample_id}. Looking for CRAM file instead."
+			CRAM=$(find "${INPUT_DIR}" -name "*${sample_id}*.cram")
+			if [ -z "$CRAM" ]; then
+				echo "Warning: No cram file found for sample ${sample_id}"
+			fi
+			echo -e "$crg2_sample_id\tILLUMINA\t\t\t\t$CRAM" >> "${ANALYSIS_DIR_FAM}/units.tsv"
+		else
+			echo -e "$crg2_sample_id\tILLUMINA\t$R1\t$R2\t\t" >> "${ANALYSIS_DIR_FAM}/units.tsv"
 		fi
-		
-		echo -e "$crg2_sample_id\tILLUMINA\t$R1\t$R2\t\t" >> "${ANALYSIS_DIR_FAM}/units.tsv"
 	else
 		INPUT_DIR="/hpf/largeprojects/tgnode/data/GeneDx/${family}"
 		CRAM=$(find "${INPUT_DIR}" -name "*${sample_id}.cram")
