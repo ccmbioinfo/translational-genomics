@@ -5,7 +5,7 @@
 # Example:  sh WGS_reanalysis_DPLM_input.sh ../../../sample_sheets/DECODER/analysis_requests/analyses_DSK054_DSK045.tsv DECODER fastq_20250107
 # Note: may need to enter dummy value into 'Notes' column (e.g. '.') so that analysis tsv is parsed properly
 
-set -euo pipefail
+#set -euo pipefail
 
 # Input validation
 sample_file=$1
@@ -30,12 +30,38 @@ fi
 
 CREDS="PT_credentials.csv"
 METADATA_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/sample_sheets"
-ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/${project}"
+ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/test/${project}"
 CRG2=~/crg2
 
 # get HPO terms and pedigree
 module load python/3.7.1
-python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $sample_file -credentials $CREDS
+#python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $sample_file -credentials $CREDS
+
+for family in `awk '{print $3}' $sample_file | cut -d '.' -f1 | tr -d '_' | uniq`
+do
+        echo $family
+		ANALYSIS_DIR_FAM=`echo ${ANALYSIS_DIR}/${family}/*`
+		if [ -d ${ANALYSIS_DIR_FAM} ]; then
+			echo "Analysis directory already exists for $family. Re-creating samples.tsv and units.tsv files."
+			# now re-initialize sample files
+			echo "sample" > "${ANALYSIS_DIR_FAM}/samples.tsv"
+			echo -e "sample\tplatform\tfq1\tfq2\tbam\tcram" > "${ANALYSIS_DIR_FAM}/units.tsv"
+		fi
+	    # check if all samples in analysis TSV are represented in the pedigree  
+		if [ "$family" != "DecoderID" ]; then
+			ped=`ls /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${family}* | tail -n 1`
+			echo $ped
+			# get all samples in the pedigree
+			samples=`awk '{print $2}' $ped`
+			family=`echo $family | sed 's/DSK/DSK_/'`
+			for sample in `grep  $family $sample_file | grep -v LRWGS |  awk '{print $3}' |  tr -d '_' | tr '.' '_'`; do
+				if ! echo $samples | grep -q $sample; then
+					echo "Sample $sample not found in pedigree for $family, exiting"
+					exit 1
+				fi
+			done
+		fi
+done
 
 while IFS=$'\t' read -r family sample_id decoder_id sample_type status notes dnastack lab lims_id
 do
@@ -90,8 +116,8 @@ do
 	if [[ "$lab" == "DPLM" ]]; then
 		INPUT_DIR="/hpf/largeprojects/tgnode/data/$fastq_dir"
 		# Find and format fastq paths
-		R1=`echo  ${INPUT_DIR}/${sample_id}*/*${sample_id}*R1*fastq.gz | sed 's/ /,/g'`
-		R2=`echo  ${INPUT_DIR}/${sample_id}*/*${sample_id}*R2*fastq.gz | sed 's/ /,/g'`
+		R1=`echo  ${INPUT_DIR}/*${sample_id}*/*${sample_id}*R1*fastq.gz | sed 's/ /,/g'`
+		R2=`echo  ${INPUT_DIR}/*${sample_id}*/*${sample_id}*R2*fastq.gz | sed 's/ /,/g'`
 		test_file=`echo $R1 | cut -d',' -f1`
 		echo $test_file
 		
