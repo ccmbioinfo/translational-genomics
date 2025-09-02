@@ -80,7 +80,7 @@ do
                 # add pedigree to config.yaml
                  if [ "$project" = "DECODER" ]; then
                          echo "Finding pedigree"
-                         ped=`ls /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${project_family}* | tail -n 1` # last file is the most recent
+                         ped=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${project_family}* | head -n 1` # get most recent pedigree
                          echo $ped
                          if [ -z $ped ]; then
                                  echo "No pedigree found"
@@ -212,7 +212,7 @@ do
          if [ "$project_family" != "Decoder_ID" ]; then
               # check if all samples in analysis TSV are represented in the pedigree 
               ped_family=`echo $project_family | tr -d '_'`
-              ped=`ls /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${ped_family}* | tail -n 1`
+              ped=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${ped_family}* | head -n 1`
               # get all samples in the pedigree
               samples=`awk '{print $2}' $ped`
               # check if all samples in analysis TSV are represented in the pedigree
