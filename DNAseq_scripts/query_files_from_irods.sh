@@ -3,10 +3,9 @@
 
 LIMSID=$1
 PROJECT=$2
-OUT=../../../files_from_irods/DECODER/iRods_paths/${LIMSID}_PacBio_files.txt
+OUT=../../../files_from_irods/${PROJECT}/iRods_paths/${LIMSID}_PacBio_files.txt
 
 # retrieve deep variant joint-genotyped VCF
-echo -e "iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like "%$LIMSID%" and DATA_NAME like '%cohort.joint.GRCh38.small_variants.phased.vcf.gz'" 
 iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.small_variants.phased.vcf.gz'" > $OUT
 iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.small_variants.phased.vcf.gz.tbi'" >> $OUT
 
