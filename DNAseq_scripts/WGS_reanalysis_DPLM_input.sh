@@ -30,12 +30,12 @@ fi
 
 CREDS="PT_credentials.csv"
 METADATA_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/sample_sheets"
-ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/test/${project}"
+ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/${project}"
 CRG2=~/crg2
 
 # get HPO terms and pedigree
 module load python/3.7.1
-#python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $sample_file -credentials $CREDS
+python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $sample_file -credentials $CREDS
 
 for family in `awk '{print $3}' $sample_file | cut -d '.' -f1 | tr -d '_' | uniq`
 do
