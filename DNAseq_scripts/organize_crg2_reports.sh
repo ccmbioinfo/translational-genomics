@@ -12,6 +12,8 @@ HPO=$(ls /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/*/${family}* | ta
 mkdir ${analysis}/report/all
 
 if [[ "$ngs" == "WGS" ]]; then
+    # MELT
+    cp ${analysis}/report/MELT/* ${analysis}/report/all
     # coding report
     cp ${analysis}/report/coding/*/*wes*  ${analysis}/report/all
     # de novo report
@@ -27,11 +29,9 @@ if [[ "$ngs" == "WGS" ]]; then
     # sv report
     cp ${analysis}/report/sv/* ${analysis}/report/all
     # MT report
-    cp ${analysis}/report/mitochondrial/* ${analysis}/report/all
+    cp ${analysis}/report/mitochondrial/*202* ${analysis}/report/all
     # STR reports
     cp ${analysis}/report/str/*202* ${analysis}/report/all
-    # MELT
-    cp ${analysis}/report/MELT/*202* ${analysis}/report/all
 
     rm ${analysis}/report/all/*clinical*
 else
@@ -44,7 +44,9 @@ fi
 # add HPO terms to small variant reports
 for f in ${analysis}/report/all/*w*csv
 do
-    python3 ~/crg2-pacbio/utils/add_hpo_terms_to_wes.py $HPO $f
-    rm $f
+    if [ "$f" = *"MELT"* ]; then
+        python3 ~/crg2-pacbio/utils/add_hpo_terms_to_wes.py $HPO $f
+        rm $f
+    fi
 done
 
