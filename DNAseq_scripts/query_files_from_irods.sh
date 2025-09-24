@@ -21,7 +21,7 @@ iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and
 iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%_hg38_PACBIO_cnv.tagged.tsv'" >> $OUT
 
 # retrieve TRGT VCFs and spanning BAMs
-iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%trgt.sorted.phased.vcf.gz'" >> $OUT
-iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%trgt.sorted.phased.vcf.gz.tbi'" >> $OUT   
+#iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%trgt.sorted.phased.vcf.gz'" >> $OUT
+#iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%trgt.sorted.phased.vcf.gz.tbi'" >> $OUT   
 iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%.trgt.spanning.sorted.bam%'" >> $OUT
 
