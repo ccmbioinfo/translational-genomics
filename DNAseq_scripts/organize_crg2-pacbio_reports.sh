@@ -4,7 +4,7 @@ module load python/3.7.1
 
 analysis=$1 # e.g. DSK002/PacBio
 family=`dirname $analysis`
-HPO=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/*/${family}*txt
+HPO=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/*/${family}*txt | head -n 1`
 
 mkdir ${analysis}/reports
 
@@ -20,9 +20,10 @@ panel_date=`basename $panelflank | cut -d'.' -f3`
 cp $panelflank ${analysis}/reports/${family}.wgs.panel-flank.${panel_date}.csv
 
 # add HPO terms to small variant reports
-for f in ${analysis}/reports/*w*csv
+for f in ${analysis}/reports/*wes*csv ${analysis}/reports/*wgs*csv
 do
-    python3 ~/crg2-pacbio/utils/add_hpo_terms_to_wes.py $HPO $f
+	echo $f
+	python3 ~/crg2-pacbio/utils/add_hpo_terms_to_wes.py $HPO $f
     rm $f
 done
 
