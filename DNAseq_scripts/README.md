@@ -65,31 +65,6 @@ A bash script that sets up analysis directories and configuration for PacBio dat
 Usage:
 `sh PacBio_setup.sh <analyses TSV> <iRods_date> <project>`
 
-### parse_irods_pacbio.py
-Parses iRods archive files for PacBio DECODER project data:
-- Takes two arguments:
-    - iRods file listing (from `ils -r` command)
-    - Comma-separated list of family IDs
-- Extracts paths for:
-    - DeepVariant VCFs
-    - PBSV VCFs
-    - BAM files
-    - TRGT files
-    - CNV reports
-- Outputs dated file lists for each data type
-
-Usage:
-`python3 parse_irods_pacbio.py <iRods_file> <family1,family2,family3>`
-
-### parse_irods_pacbio_genesteps.py
-Similar to parse_irods_pacbio.py but specifically for Gene-STEPS project data:
-- Takes one argument: iRods file listing
-- Automatically processes all families in the Gene-STEPS iRods directory
-- Creates dated file lists for all data types
-
-Usage:
-`python3 parse_irods_pacbio_genesteps.py <iRods_file>`
-
 ### run_TRGT_repeat_outliers_and_denovo.sh
 Sets up and configures TRGT outlier and de novo repeat analyses for a family:
 - Takes two arguments:
