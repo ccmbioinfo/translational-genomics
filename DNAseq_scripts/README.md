@@ -2,14 +2,6 @@
 
 ## The scripts in this folder perform a variety of tasks related to processing exomes, short-read genomes, and long-read genomes for the SickKids Translational Genomics Node. 
 
-### copy_files_from_irods.sh
-A bash script that copies files from the iRods archive to Isilon storage. Takes two arguments:
-- `irods_files`: A file containing list of files to copy from iRods
-- `project`: Project name/directory to copy files to (e.g. DECODER)
-
-Usage:
-`sh copy_files_from_irods.sh <irods_files> <project>`
-
 ### get_HPO_pedigree_genome_clinic.py 
 A Python script that retrieves pedigree information and HPO terms from Genome Clinic Phenotips. Contains functions to:
 - Get pedigree information including family relationships
@@ -53,10 +45,9 @@ Usage:
 `sh query_files_from_irods.sh <LIMSID> <project>`
 
 ### PacBio_setup.sh
-A bash script that sets up analysis directories and configuration for PacBio data processing:
+A bash script that sets up analysis directories and configuration for PacBio LRWGS processing:
 - Takes three arguments:
     - `analyses`: Tab-separated sample sheet with Family_ID, Sample_ID, and Decoder_ID columns
-    - `iRods_query_date`: Date when iRods files were queried (YYYY-MM-DD format)
     - `project`: Project name (e.g., genesteps or DECODER)
 - Sets up analysis directories with required pipeline files
 - Configures HPO terms and pedigree information
