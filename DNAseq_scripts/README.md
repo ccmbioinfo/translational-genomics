@@ -42,6 +42,16 @@ Organizes analysis reports from the crg2-pacbio pipeline:
 Usage:
 `sh organize_crg2-pacbio_reports.sh <analysis_path>`
 
+### query_files_from_irods.sh
+A bash script that queries the iRods paths for crg2-pacbio input files, such as the small variant VCFs, BAMs, etc. 
+- Takes two arguments:
+    - `LIMSID`: sequencing batch ID, e.g. COS30304
+    - `project`: i.e. DECODER or genesteps
+- Outputs filepaths to /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${PROJECT}/iRods_paths/${LIMSID}_PacBio_files.txt
+
+Usage: 
+`sh query_files_from_irods.sh <LIMSID> <project>`
+
 ### PacBio_setup.sh
 A bash script that sets up analysis directories and configuration for PacBio data processing:
 - Takes three arguments:

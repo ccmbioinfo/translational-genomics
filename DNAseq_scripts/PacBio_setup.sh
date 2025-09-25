@@ -27,7 +27,7 @@ fi
 
 CREDS="PT_credentials.csv"
 METADATA_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}"
-ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/test/${project}"
+ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/${project}"
 CRG2_PACBIO=~/crg2-pacbio
 
 if [ -z $analyses ]; then
@@ -39,7 +39,7 @@ module load python/3.7.1
 module load bcftools
 
 
-#python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $analyses -credentials $CREDS
+python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $analyses -credentials $CREDS
 
 for project_family in `awk '{print $3}' $analyses | cut -d '.' -f1 | tr -d '_' | uniq`
 do
