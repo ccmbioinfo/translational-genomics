@@ -42,9 +42,11 @@ else
 fi 
 
 # add HPO terms to small variant reports
+ls ${analysis}/report/all/
 for f in ${analysis}/report/all/*w*csv
 do
-    if [ "$f" = *"MELT"* ]; then
+    if [[ "$f" != *MELT* ]]; then
+        echo $f
         python3 ~/crg2-pacbio/utils/add_hpo_terms_to_wes.py $HPO $f
         rm $f
     fi
