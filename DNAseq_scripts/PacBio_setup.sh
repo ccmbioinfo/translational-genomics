@@ -29,6 +29,7 @@ CREDS="PT_credentials.csv"
 METADATA_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}"
 ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/${project}"
 CRG2_PACBIO=~/crg2-pacbio
+TODAY=`date +%Y-%m-%d`
 
 if [ -z $analyses ]; then
         echo 'Must specify path to requested analysis TSV file, exiting'
@@ -39,15 +40,16 @@ module load python/3.7.1
 module load bcftools
 
 
-python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $analyses -credentials $CREDS
+#python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $analyses -credentials $CREDS
 
 for project_family in `awk '{print $3}' $analyses | cut -d '.' -f1 | tr -d '_' | uniq`
 do
         echo $project_family
-        if [ -d ${ANALYSIS_DIR}/${project_family}/PacBio ]; then
+        FAMILY_DIR=${ANALYSIS_DIR}/${project_family}/PacBio_${TODAY}
+        if [ -d ${FAMILY_DIR} ]; then
                 echo "Analysis directory already exists for $project_family. Re-creating samples.tsv and units.tsv files."
                 # now re-initialize sample file
-                echo "sample" > "${ANALYSIS_DIR}/${project_family}/PacBio/samples.tsv"
+                echo -e "sample\tbam\tcase_or_control" > "${FAMILY_DIR}/samples.tsv"
         fi
 done
 
@@ -61,12 +63,13 @@ do
 
     if [ "$family" != "Family_ID" ]; then
         # create analysis directory for family
-        if [ ! -d ${ANALYSIS_DIR}/${project_family}/PacBio ]; then
+        FAMILY_DIR=${ANALYSIS_DIR}/${project_family}/PacBio_${TODAY}
+        if [ ! -d ${FAMILY_DIR} ]; then
                 echo "Setting up analysis directory for $family"
-                mkdir -p ${ANALYSIS_DIR}/${project_family}/PacBio
+                mkdir -p ${FAMILY_DIR}
                 # copy pipeline files to analysis directory 
-                cp ${CRG2_PACBIO}/config.yaml ${CRG2_PACBIO}/crg2-pacbio.sh ${CRG2_PACBIO}/slurm_profile/slurm-config.yaml ${ANALYSIS_DIR}/${project_family}/PacBio
-                sed -i "s/NA12878/$project_family/" ${ANALYSIS_DIR}/${project_family}/PacBio/config.yaml
+                cp ${CRG2_PACBIO}/config.yaml ${CRG2_PACBIO}/crg2-pacbio.sh ${CRG2_PACBIO}/slurm_profile/slurm-config.yaml ${FAMILY_DIR}
+                sed -i "s/NA12878/$project_family/" ${FAMILY_DIR}/config.yaml
 
                 # add HPO terms to config.yaml
                  echo "Finding HPO terms"
@@ -75,7 +78,7 @@ do
                  if [ -z $HPO ]; then
                          echo "No HPO terms found"
                  fi
-                 sed -i "s+hpo: \"\"+hpo: \"${HPO}\"+"  ${ANALYSIS_DIR}/${project_family}/PacBio/config.yaml
+                 sed -i "s+hpo: \"\"+hpo: \"${HPO}\"+"  ${FAMILY_DIR}/config.yaml
 
                 # add pedigree to config.yaml
                  if [ "$project" = "DECODER" ]; then
@@ -85,22 +88,22 @@ do
                          if [ -z $ped ]; then
                                  echo "No pedigree found"
                          fi
-                         sed -i "s+ped: \"\"+ped: \"${ped}\"+"  ${ANALYSIS_DIR}/${project_family}/PacBio/config.yaml
+                         sed -i "s+ped: \"\"+ped: \"${ped}\"+"  ${FAMILY_DIR}/config.yaml
                  fi
 
 
 		# not C4R, so remove C4R sample columns from reports
-		sed -i "s/c4r: True/c4r: False/"  ${ANALYSIS_DIR}/${project_family}/PacBio/config.yaml
+		sed -i "s/c4r: True/c4r: False/"  ${FAMILY_DIR}/config.yaml
                 # add targets to job submission script
                 if [ "$project" = "genesteps" ]; then
-                        sed -i "s+{SLURM}+{SLURM} -p sv/${project_family}.pbsv.csv small_variants/coding/${project_family} small_variants/panel/${project_family} small_variants/panel-flank/${project_family}   pathogenic_repeats/${project_family}.known.path.str.loci.csv repeat_outliers/${project_family}.repeat.outliers.annotated.csv+g" ${ANALYSIS_DIR}/${project_family}/PacBio/crg2-pacbio.sh
+                        sed -i "s+{SLURM}+{SLURM} -p sv/${project_family}.pbsv.csv small_variants/coding/${project_family} small_variants/panel/${project_family} small_variants/panel-flank/${project_family}   pathogenic_repeats/${project_family}.known.path.str.loci.csv repeat_outliers/${project_family}.repeat.outliers.annotated.csv+g" ${FAMILY_DIR}/crg2-pacbio.sh
                 fi
                 # create samples.tsv 
-                echo -e "sample\tBAM\tcase_or_control" > ${ANALYSIS_DIR}/${project_family}/PacBio/samples.tsv
+                echo -e "sample\tBAM\tcase_or_control" > ${FAMILY_DIR}/samples.tsv
 
                 # create units.tsv 
                 echo "Populating units.tsv with inputs"
-                echo -e "family\tplatform\tsmall_variant_vcf\ttrgt_vcf_dir\tpbsv_vcf\ttrgt_pathogenic_vcf_dir" > ${ANALYSIS_DIR}/${project_family}/PacBio/units.tsv
+                echo -e "family\tplatform\tsmall_variant_vcf\tpbsv_vcf" > ${FAMILY_DIR}/units.tsv
                 deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}-cohort.joint.GRCh38.small_variants.phased.vcf.gz
                 if [ ! -f $deepvariant ]; then
                         deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}.joint.GRCh38.small_variants.phased.vcf.gz
@@ -123,13 +126,13 @@ do
                                 fi
                         fi
                 fi
-                echo -e "$project_family\tPACBIO\t${deepvariant}\ttrgt\t${sv}\t" >> ${ANALYSIS_DIR}/${project_family}/PacBio/units.tsv
+                echo -e "$project_family\tPACBIO\t${deepvariant}\t${sv}" >> ${FAMILY_DIR}/units.tsv
 
                 # create CNV directory
-                mkdir ${ANALYSIS_DIR}/${project_family}/PacBio/cnv
+                mkdir ${FAMILY_DIR}/cnv
 
                 # create trgt directory
-                mkdir ${ANALYSIS_DIR}/${project_family}/PacBio/trgt 
+                mkdir ${FAMILY_DIR}/trgt 
         fi
 
         # add sample and bams
@@ -138,32 +141,32 @@ do
 
         # add sample and BAM to samples.tsv
         project_sample=`echo $project_id | cut -d '_' -f2 | tr -d '\r' | tr -d ' '`
-        echo -e "${project_sample}\t$BAM"  >> ${ANALYSIS_DIR}/${project_family}/PacBio/samples.tsv
+        echo -e "${project_sample}\t$BAM"  >> ${FAMILY_DIR}/samples.tsv
 
         # copy TCAG annotated CNV files for merging
         echo "Copying CNV for $sequence_id"
         CNV=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${sequence_id}.GRCh38.hificnv_annPipelineRevv1.7.1_20250120_hg38_PACBIO_cnv.tagged.tsv
         CNV_filename=`basename $CNV`
-        if [ ! -d ${ANALYSIS_DIR}/${project_family}/PacBio/cnv ]; then
-                mkdir -p ${ANALYSIS_DIR}/${project_family}/PacBio/cnv
+        if [ ! -d ${FAMILY_DIR}/cnv ]; then
+                mkdir -p ${FAMILY_DIR}/cnv
         fi
-        cp $CNV ${ANALYSIS_DIR}/${project_family}/PacBio/cnv
+        cp $CNV ${FAMILY_DIR}/cnv
         # rename CNV file
         sequence_id_no_period=`echo $sequence_id | tr '.' '_'` # TCAG replaces period in DECODER IDs with underscore
         project_id=`echo $project_id | tr -d '\r' | tr -d ' '`
         #sequence_id_no_period=`echo ${sequence_id_no_period}_A1`
-        sed -i "s/${sequence_id_no_period}/${project_id}/g" ${ANALYSIS_DIR}/${project_family}/PacBio/cnv/${CNV_filename}
+        sed -i "s/${sequence_id_no_period}/${project_id}/g" ${FAMILY_DIR}/cnv/${CNV_filename}
 
         # trgt
         trgt=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${sequence_id}.GRCh38.trgt.sorted.phased.vcf.gz
         echo $trgt
         echo "Copying trgt for $sequence_id"
-        if [ ! -d ${ANALYSIS_DIR}/${project_family}/PacBio/trgt ]; then
-                mkdir -p ${ANALYSIS_DIR}/${project_family}/PacBio/trgt
+        if [ ! -d ${FAMILY_DIR}/trgt ]; then
+                mkdir -p ${FAMILY_DIR}/trgt
         fi
-        cp ${trgt}* ${ANALYSIS_DIR}/${project_family}/PacBio/trgt
+        cp ${trgt}* ${FAMILY_DIR}/trgt
         trgt=`basename $trgt`
-        trgt=${ANALYSIS_DIR}/${project_family}/PacBio/trgt/$trgt
+        trgt=${FAMILY_DIR}/trgt/$trgt
 
         # replace sample names in VCFs
         echo "Replacing sample IDs in VCFs"
@@ -224,12 +227,13 @@ do
               done
               # exclude TRGT de novo rule if family is not a trio 
               project_family=$(echo "$project_family" | tr -d '_' | tr -d '\r')
-              if [ $(wc -l ${ANALYSIS_DIR}/${project_family}/PacBio/samples.tsv | awk '{print $1}') -lt 4 ]; then
+              FAMILY_DIR=${ANALYSIS_DIR}/${project_family}/PacBio_${TODAY}
+              if [ $(wc -l ${FAMILY_DIR}/samples.tsv | awk '{print $1}') -lt 4 ]; then
                 echo "Family $project_family is not a trio, excluding TRGT de novo rule"
-                sed -i "s+{SLURM}+{SLURM} -p sv/${project_family}.pbsv.csv small_variants/coding/${project_family} small_variants/panel/${project_family} small_variants/panel-flank/${project_family}   pathogenic_repeats/${project_family}.known.path.str.loci.csv repeat_outliers/${project_family}.repeat.outliers.annotated.csv+g" ${ANALYSIS_DIR}/${project_family}/PacBio/crg2-pacbio.sh
+                sed -i "s+{SLURM}+{SLURM} -p sv/${project_family}.pbsv.csv small_variants/coding/${project_family} small_variants/panel/${project_family} small_variants/panel-flank/${project_family}   pathogenic_repeats/${project_family}.known.path.str.loci.csv repeat_outliers/${project_family}.repeat.outliers.annotated.csv small_variants/wgs-high-impact/${project_family}+g" ${FAMILY_DIR}/crg2-pacbio.sh
               fi
               # submit one CNV merge job per family
-              cd ${ANALYSIS_DIR}/${project_family}/PacBio/cnv
+              cd ${FAMILY_DIR}/cnv
               echo "Submitting CNV merge job"
               sbatch ${CRG2_PACBIO}/scripts/merge.cnv.reports.sh $project_family
               cd $ANALYSIS_DIR
