@@ -32,6 +32,7 @@ CREDS="PT_credentials.csv"
 METADATA_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/sample_sheets"
 ANALYSIS_DIR="/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/analyses/${project}"
 CRG2=~/crg2
+DATE=`date +%Y-%m-%d`
 
 # get HPO terms and pedigree
 module load python/3.7.1
@@ -40,7 +41,8 @@ python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $sample_file -credential
 for family in `awk '{print $3}' $sample_file | cut -d '.' -f1 | tr -d '_' | uniq`
 do
         echo $family
-		ANALYSIS_DIR_FAM=`echo ${ANALYSIS_DIR}/${family}/*`
+		sample_type=`grep $family $sample_file | awk '{print $4}' | uniq`
+		ANALYSIS_DIR_FAM=`echo ${ANALYSIS_DIR}/${family}_${sample_type}_reanalysis_${DATE}/`
 		if [ -d ${ANALYSIS_DIR_FAM} ]; then
 			echo "Analysis directory already exists for $family. Re-creating samples.tsv and units.tsv files."
 			# now re-initialize sample files
@@ -53,6 +55,7 @@ do
 			echo $ped
 			# get all samples in the pedigree
 			samples=`awk '{print $2}' $ped`
+			echo $samples
 			family=`echo $family | sed 's/DSK/DSK_/'`
 			for sample in `grep  $family $sample_file | grep -v LRWGS |  awk '{print $3}' |  tr -d '_' | tr '.' '_'`; do
 				if ! echo $samples | grep -q $sample; then
@@ -74,7 +77,7 @@ do
 	crg2_sample_id=$(echo "$crg2_decoder_id" | cut -d '_' -f2)
 	family=$(echo "$decoder_id" | cut -d '.' -f1 | tr -d '_')
 	
-	ANALYSIS_DIR_FAM="${ANALYSIS_DIR}/${family}/${sample_type}_reanalysis"
+	ANALYSIS_DIR_FAM="${ANALYSIS_DIR}/${family}/${sample_type}_reanalysis_${DATE}"
 	echo "Processing family: $family"
 	echo "Analysis directory: $ANALYSIS_DIR_FAM"
 	echo "Lab: $lab"
@@ -131,13 +134,31 @@ do
 		else
 			echo -e "$crg2_sample_id\tILLUMINA\t$R1\t$R2\t\t" >> "${ANALYSIS_DIR_FAM}/units.tsv"
 		fi
-	else
+	elif [[ "$lab" == "GeneDx" ]]; then
 		INPUT_DIR="/hpf/largeprojects/tgnode/data/GeneDx/${family}"
 		CRAM=$(find "${INPUT_DIR}" -name "*${sample_id}.cram")
 		if [ -z "$CRAM" ]; then
 			echo "Warning: No cram file found for sample ${sample_id}"
 		fi
 		echo -e "$crg2_sample_id\tILLUMINA\t\t\t\t$CRAM" >> "${ANALYSIS_DIR_FAM}/units.tsv"
+	else # Prevention Genetics
+		INPUT_DIR="/hpf/largeprojects/tgnode/data/Prevention_Genetics/${family}"
+		R1=`echo  ${INPUT_DIR}/*${sample_id}*/*${sample_id}*R1*fastq.gz | sed 's/ /,/g'`
+		R2=`echo  ${INPUT_DIR}/*${sample_id}*/*${sample_id}*R2*fastq.gz | sed 's/ /,/g'`
+		test_file=`echo $R1 | cut -d',' -f1`
+		echo $test_file
+		
+		if [ ! -f "$test_file" ]; then
+			echo "Warning: No fastq files found for sample ${sample_id}. Looking for CRAM file instead."
+			CRAM=$(find "${INPUT_DIR}" -name "*${sample_id}*.cram")
+			if [ -z "$CRAM" ]; then
+				echo "Warning: No cram file found for sample ${sample_id}"
+			fi
+			echo -e "$crg2_sample_id\tILLUMINA\t\t\t\t$CRAM" >> "${ANALYSIS_DIR_FAM}/units.tsv"
+		else
+			echo -e "$crg2_sample_id\tILLUMINA\t$R1\t$R2\t\t" >> "${ANALYSIS_DIR_FAM}/units.tsv"
+		fi
+	
 	fi
 		
 	
