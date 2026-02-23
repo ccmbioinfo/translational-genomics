@@ -1,11 +1,13 @@
 #!/bin/bash
-#usage: sh PacBio_setup.sh <analyses> <project>
+# Usage: sh PacBio_setup.sh <analyses> <project>
+# This file sets up crg2-pacbio analysis directories and downloads HPO terms and pedigrees from Phenotips. 
+# It also replaces TCAG sequence IDs in VCFs with crg2-pacbio compatible IDs (ie family_sample), and checks that all samples in the analysis TSV are represented in the Phenotips pedigree.
 
 set -euo pipefail
 
 
 analyses=$1 # Path to sample sheet. Should be tab separated and three columns, Family_ID, sequence_id, Decoder_ID. Family_ID and sequence_id here refer to the IDs after which the files are named.
-# For example family ID is 1745 and sample ID is 1741_SK0125, and the DECODER ID is DSK_007.01. If files are named with DECODER ID, just use the DECODER family and sample IDs.
+# For example family ID is 1745 and sample ID is 1741_SK0125, and the DECODER ID is DSK_007.01. 
 project=$2 # e.g genesteps or DECODER
 
 # Input validation
@@ -39,15 +41,15 @@ fi
 module load python/3.7.1
 module load bcftools
 
-
-#python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $analyses -credentials $CREDS
+# get HPO terms and pedigrees from Phenotips for all families in sample sheet
+python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $analyses -credentials $CREDS
 
 for project_family in `awk '{print $3}' $analyses | cut -d '.' -f1 | tr -d '_' | uniq`
 do
         echo $project_family
         FAMILY_DIR=${ANALYSIS_DIR}/${project_family}/PacBio_${TODAY}
         if [ -d ${FAMILY_DIR} ]; then
-                echo "Analysis directory already exists for $project_family. Re-creating samples.tsv and units.tsv files."
+                echo "Analysis directory already exists for $project_family. Re-creating samples.tsv."
                 # now re-initialize sample file
                 echo -e "sample\tbam\tcase_or_control" > "${FAMILY_DIR}/samples.tsv"
         fi
@@ -55,7 +57,7 @@ done
 
 while IFS=$'\t' read -r family sequence_id project_id sample_type status notes uploaded_to_DNAStack lab LIMS
 do
-        project_id=`echo $project_id | tr -d '_' | tr '.' '_' | tr -d '\r'` # e.g. convert DSK_018.03 to DSK018_03 so crg2 doesn't mess up wildcards
+        project_id=`echo $project_id | tr -d '_' | tr '.' '_' | tr -d '\r'` # e.g. convert DSK_018.03 to DSK018_03 so crg2-pacbio doesn't mess up wildcards
         project_family=`echo $project_id | cut -d '_' -f1`
 	sequence_id=`echo $sequence_id | tr -d '\r'`
         echo $project_id  $project_family $sequence_id
@@ -140,7 +142,7 @@ do
         project_sample=`echo $project_id | cut -d '_' -f2 | tr -d '\r' | tr -d ' '`
         echo -e "${project_sample}\t$BAM"  >> ${FAMILY_DIR}/samples.tsv
 
-        # copy TCAG annotated CNV files for merging
+        # copy CNV VCFs
         echo "Copying CNV for $sequence_id"
         CNV=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${sequence_id}.GRCh38.hificnv.vcf.gz
         CNV_filename=`basename $CNV`
@@ -218,7 +220,6 @@ do
               ped=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${ped_family}* | head -n 1`
               # get all samples in the pedigree
               samples=`awk '{print $2}' $ped`
-              # check if all samples in analysis TSV are represented in the pedigree
               for sample in `grep  $project_family $analyses | grep LRWGS |  awk '{print $3}' |  tr -d '_' | tr '.' '_'`; do
                   if ! echo $samples | grep -q $sample; then
                       echo "Sample $sample not found in pedigree for $project_family, exiting"
