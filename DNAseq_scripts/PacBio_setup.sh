@@ -94,16 +94,13 @@ do
 
 		# not C4R, so remove C4R sample columns from reports
 		sed -i "s/c4r: True/c4r: False/"  ${FAMILY_DIR}/config.yaml
-                # add targets to job submission script
-                if [ "$project" = "genesteps" ]; then
-                        sed -i "s+{SLURM}+{SLURM} -p sv/${project_family}.pbsv.csv small_variants/coding/${project_family} small_variants/panel/${project_family} small_variants/panel-flank/${project_family}   pathogenic_repeats/${project_family}.known.path.str.loci.csv repeat_outliers/${project_family}.repeat.outliers.annotated.csv+g" ${FAMILY_DIR}/crg2-pacbio.sh
-                fi
+
                 # create samples.tsv 
                 echo -e "sample\tBAM\tcase_or_control" > ${FAMILY_DIR}/samples.tsv
 
                 # create units.tsv 
                 echo "Populating units.tsv with inputs"
-                echo -e "family\tplatform\tsmall_variant_vcf\tpbsv_vcf" > ${FAMILY_DIR}/units.tsv
+                echo -e "family\tplatform\tsmall_variant_vcf\tpbsv_vcf\tcnv_dir" > ${FAMILY_DIR}/units.tsv
                 deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}-cohort.joint.GRCh38.small_variants.phased.vcf.gz
                 if [ ! -f $deepvariant ]; then
                         deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}.joint.GRCh38.small_variants.phased.vcf.gz
@@ -126,7 +123,7 @@ do
                                 fi
                         fi
                 fi
-                echo -e "$project_family\tPACBIO\t${deepvariant}\t${sv}" >> ${FAMILY_DIR}/units.tsv
+                echo -e "$project_family\tPACBIO\t${deepvariant}\t${sv}\tcnv/vcfs" >> ${FAMILY_DIR}/units.tsv
 
                 # create CNV directory
                 mkdir ${FAMILY_DIR}/cnv
@@ -145,17 +142,13 @@ do
 
         # copy TCAG annotated CNV files for merging
         echo "Copying CNV for $sequence_id"
-        CNV=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${sequence_id}.GRCh38.hificnv_annPipelineRevv1.7.1_20250120_hg38_PACBIO_cnv.tagged.tsv
+        CNV=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${sequence_id}.GRCh38.hificnv.vcf.gz
         CNV_filename=`basename $CNV`
-        if [ ! -d ${FAMILY_DIR}/cnv ]; then
-                mkdir -p ${FAMILY_DIR}/cnv
+        if [ ! -d ${FAMILY_DIR}/cnv/vcfs ]; then
+                mkdir -p ${FAMILY_DIR}/cnv/vcfs
         fi
-        cp $CNV ${FAMILY_DIR}/cnv
-        # rename CNV file
-        sequence_id_no_period=`echo $sequence_id | tr '.' '_'` # TCAG replaces period in DECODER IDs with underscore
-        project_id=`echo $project_id | tr -d '\r' | tr -d ' '`
-        #sequence_id_no_period=`echo ${sequence_id_no_period}_A1`
-        sed -i "s/${sequence_id_no_period}/${project_id}/g" ${FAMILY_DIR}/cnv/${CNV_filename}
+        cp ${CNV}* ${FAMILY_DIR}/cnv/vcfs
+
 
         # trgt
         trgt=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${sequence_id}.GRCh38.trgt.sorted.phased.vcf.gz
@@ -193,18 +186,25 @@ do
                 fi
         fi
         # ID map file
-        echo $sequence_id_no_period $project_id > sample_rename.txt
+        echo $sequence_id $project_id > sample_rename.txt
         # deepvariant
-        bcftools reheader -s sample_rename.txt  -o $deepvariant.vcf.gz $deepvariant
+        bcftools reheader -s sample_rename.txt  $deepvariant |  bcftools view  -Oz -o $deepvariant.vcf.gz
         mv ${deepvariant}.vcf.gz $deepvariant
         # pbsv
-        bcftools reheader -s sample_rename.txt  -o $sv.vcf.gz $sv
+        bcftools reheader -s sample_rename.txt  $sv |  bcftools view  -Oz -o $sv.vcf.gz
         mv $sv.vcf.gz $sv
         # trgt
         trgt_sequence_id=`bcftools query -l $trgt`
         echo $trgt_sequence_id $project_id > sample_rename.txt
-        bcftools reheader -s sample_rename.txt  -o $trgt.vcf.gz $trgt
+        bcftools reheader -s sample_rename.txt  $trgt |  bcftools view  -Oz -o $trgt.vcf.gz
         mv $trgt.vcf.gz $trgt
+        # hificnv
+        for vcf in `ls ${FAMILY_DIR}/cnv/vcfs/*.vcf.gz`; do
+            bcftools reheader -s sample_rename.txt  $vcf |  bcftools view  -Oz -o $vcf.vcf.gz
+            mv $vcf.vcf.gz $vcf
+            tabix $vcf # need to re-index otherwise bcftools merge complains
+        done
+
 
         fi
 done<$analyses
@@ -225,17 +225,5 @@ do
                       exit 1
                   fi
               done
-              # exclude TRGT de novo rule if family is not a trio 
-              project_family=$(echo "$project_family" | tr -d '_' | tr -d '\r')
-              FAMILY_DIR=${ANALYSIS_DIR}/${project_family}/PacBio_${TODAY}
-              if [ $(wc -l ${FAMILY_DIR}/samples.tsv | awk '{print $1}') -lt 4 ]; then
-                echo "Family $project_family is not a trio, excluding TRGT de novo rule"
-                sed -i "s+{SLURM}+{SLURM} -p sv/${project_family}.pbsv.csv small_variants/coding/${project_family} small_variants/panel/${project_family} small_variants/panel-flank/${project_family}   pathogenic_repeats/${project_family}.known.path.str.loci.csv repeat_outliers/${project_family}.repeat.outliers.annotated.csv small_variants/wgs-high-impact/${project_family}+g" ${FAMILY_DIR}/crg2-pacbio.sh
-              fi
-              # submit one CNV merge job per family
-              cd ${FAMILY_DIR}/cnv
-              echo "Submitting CNV merge job"
-              sbatch ${CRG2_PACBIO}/scripts/merge.cnv.reports.sh $project_family
-              cd $ANALYSIS_DIR
          fi
 done
