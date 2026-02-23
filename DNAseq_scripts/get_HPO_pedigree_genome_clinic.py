@@ -282,8 +282,9 @@ pedigree_url=f"https://genomeclinic.ccm.sickkids.ca/get/PhenoTips/FamilyPedigree
 def main():
     if args.sample_sheet:
         sample_sheet = pd.read_csv(args.sample_sheet, sep="\t")
-        sample_sheet["DECODER_family"] = sample_sheet["Decoder_ID"].str.split('.').str[0]
-        for id in sample_sheet["Decoder_ID"].values:
+        ID_col = "Decoder_ID" if "Decoder_ID" in sample_sheet.columns else "TG_ID"
+        sample_sheet["DECODER_family"] = sample_sheet[ID_col].str.split('.').str[0]
+        for id in sample_sheet[ID_col].values:
             print(id)
             fam = id.split(".")[0]
             if '.03' in id: # proband ID
