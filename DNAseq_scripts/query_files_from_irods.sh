@@ -3,7 +3,8 @@
 
 LIMSID=$1
 PROJECT=$2
-OUT=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/files_from_irods/${PROJECT}/iRods_paths/${LIMSID}_PacBio_files.txt
+OUT=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${PROJECT}/iRods_paths/${LIMSID}_PacBio_files.txt
+echo "Filepaths will be saved to $OUT"
 
 # retrieve deep variant joint-genotyped VCF
 iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.small_variants.phased.vcf.gz'" > $OUT
@@ -17,8 +18,8 @@ iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and
 iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.haplotagged.bam'" >> $OUT
 iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.haplotagged.bam.bai'" >> $OUT
 
-# retrieve CNV TSVs
-iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%_hg38_PACBIO_cnv.tagged.tsv'" >> $OUT
+# retrieve CNV VCFs
+iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%hificnv.vcf.gz%'" >> $OUT
 
 # retrieve TRGT VCFs and spanning BAMs
 iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%trgt.sorted.phased.vcf.gz'" >> $OUT
