@@ -40,13 +40,13 @@ fi
 
 module load python/3.7.1
 module load bcftools
+module load tabix
 
 # get HPO terms and pedigrees from Phenotips for all families in sample sheet
-python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $analyses -credentials $CREDS
+python3 get_HPO_pedigree_genome_clinic.py -sample_sheet $analyses -credentials $CREDS -project $project
 
 for project_family in `awk '{print $3}' $analyses | cut -d '.' -f1 | tr -d '_' | uniq`
 do
-        echo $project_family
         FAMILY_DIR=${ANALYSIS_DIR}/${project_family}/PacBio_${TODAY}
         if [ -d ${FAMILY_DIR} ]; then
                 echo "Analysis directory already exists for $project_family. Re-creating samples.tsv."
@@ -57,13 +57,24 @@ done
 
 while IFS=$'\t' read -r family sequence_id project_id sample_type status notes uploaded_to_DNAStack lab LIMS
 do
-        project_id=`echo $project_id | tr -d '_' | tr '.' '_' | tr -d '\r'` # e.g. convert DSK_018.03 to DSK018_03 so crg2-pacbio doesn't mess up wildcards
-        project_family=`echo $project_id | cut -d '_' -f1`
-	sequence_id=`echo $sequence_id | tr -d '\r'`
-        echo $project_id  $project_family $sequence_id
-
 
     if [ "$family" != "Family_ID" ]; then
+        echo $family 
+        if [[ "$family" == *"DSK"* ]]; then
+                project_id=`echo $project_id | tr -d '_' | tr '.' '_' | tr -d '\r'` # e.g. convert DSK_018.03 to DSK018_03 so crg2-pacbio doesn't mess up wildcards
+                project_family=`echo $project_id | cut -d '_' -f1`
+                sequence_id=`echo $sequence_id | tr -d '\r'`
+                echo $project_id  $project_family $sequence_id
+        elif [[ "$family" == *"GD"* ]]; then
+                project_id=`echo $project_id | sed 's/GD-/GD/' |  tr '-' '_' | tr -d '\r'` # e.g. convert GD-018-03 to GD018_03
+                project_family=`echo $project_id | cut -d '_' -f1`
+                sequence_id=`echo $sequence_id | tr -d '\r'`
+                echo $project_id  $project_family $sequence_id
+        else
+                echo "Family $family not found, exiting"
+                exit 1
+        fi
+
         # create analysis directory for family
         FAMILY_DIR=${ANALYSIS_DIR}/${project_family}/PacBio_${TODAY}
         if [ ! -d ${FAMILY_DIR} ]; then
@@ -75,23 +86,28 @@ do
 
                 # add HPO terms to config.yaml
                  echo "Finding HPO terms"
-                 HPO=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/${project}/${project_family}* | head -n 1` # get most recent HPO file
-                 echo $HPO
-                 if [ -z $HPO ]; then
-                         echo "No HPO terms found"
+                 if [[ "$family" == *"DSK"* ]]; then
+                        HPO=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/${project}/${project_family}* | head -n 1` # get most recent HPO file
+                        echo $HPO
+                 elif [[ "$family" == *"GD"* ]]; then
+                        HPO=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/${project}/${family}* | head -n 1`
+                        echo $HPO
+                 else
+                        echo "No HPO terms found"
                  fi
                  sed -i "s+hpo: \"\"+hpo: \"${HPO}\"+"  ${FAMILY_DIR}/config.yaml
 
                 # add pedigree to config.yaml
-                 if [ "$project" = "DECODER" ]; then
-                         echo "Finding pedigree"
-                         ped=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${project_family}* | head -n 1` # get most recent pedigree
-                         echo $ped
-                         if [ -z $ped ]; then
-                                 echo "No pedigree found"
-                         fi
-                         sed -i "s+ped: \"\"+ped: \"${ped}\"+"  ${FAMILY_DIR}/config.yaml
-                 fi
+                echo "Finding pedigree"
+                ped=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${project_family}* | head -n 1` # get most recent pedigree
+                echo $ped
+                if [ -z $ped ]; then
+                        ped=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${family}* | head -n 1`
+                        if [ -z $ped ]; then
+                                echo "No pedigree found"
+                        fi
+                fi
+                sed -i "s+ped: \"\"+ped: \"${ped}\"+"  ${FAMILY_DIR}/config.yaml
 
 
 		# not C4R, so remove C4R sample columns from reports
@@ -214,9 +230,13 @@ done<$analyses
 for project_family in `awk '{print $3}' $analyses | cut -d '.' -f1 |  uniq`
 do
          echo $project_family
-         if [ "$project_family" != "Decoder_ID" ]; then
+         if [ "$project_family" != "Decoder_ID" ] && [[ "$project_family" != "TG_ID" ]]; then
               # check if all samples in analysis TSV are represented in the pedigree 
-              ped_family=`echo $project_family | tr -d '_'`
+              if [[ "$project_family" == *"DSK"* ]]; then
+                ped_family=`echo $project_family | tr -d '_'`
+              else
+                ped_family=$project_family
+              fi
               ped=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/${project}/${ped_family}* | head -n 1`
               # get all samples in the pedigree
               samples=`awk '{print $2}' $ped`
