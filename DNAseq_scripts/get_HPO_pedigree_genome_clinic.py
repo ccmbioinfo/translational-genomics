@@ -109,12 +109,13 @@ def get_parents(node_id: int, relationships: dict) -> list:
 
     return parents
 
-def write_pedigree(members: dict, family: str) -> None:
+def write_pedigree(members: dict, family: str, project: str) -> None:
     """
     Write a pedigree text file given dictionary derived from Phenotips pedigree JSON
     """
     family = family.replace("_", "")
-    with open(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/DECODER/{family}_pedigree.ped", "w") as f:
+    print(f"Writing pedigree file to /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/{project}/{family}_pedigree.ped")
+    with open(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/{project}/{family}_pedigree.ped", "w") as f:
         for member in members:
             family_id = family
             sample_id = member
@@ -244,7 +245,7 @@ def get_HPO_gene_mapping(hpo_ids: list) -> pd.DataFrame:
     
     return hpo_agg_ens
 
-def process_sample(id, fam, auth, pid_url, pedigree_url):
+def process_sample(id, fam, auth, pid_url, pedigree_url, project):
     response = requests.get(f"{pid_url}/{id}", auth=auth)
     try:
         pid = response.json().get('id')
@@ -252,16 +253,16 @@ def process_sample(id, fam, auth, pid_url, pedigree_url):
         response = requests.get(pedigree_url, params=params, auth=auth)
         ped_json = response.json()
         members, proband_id = get_pedigree_info(ped_json)
-        write_pedigree(members, fam)
+        write_pedigree(members, fam, project)
         pid_proband = requests.get(f"{pid_url}/{proband_id}", auth=auth).json().get('id')
-        print(pid_proband)
         HPO_ids = get_HPO_IDs(pid_proband)
-        print(len(HPO_ids))
+        print(f"Number of HPO terms for {id}: {len(HPO_ids)}")
         HPO_df = get_HPO_gene_mapping(HPO_ids)
         today = date.today()
         today = today.strftime("%Y-%m-%d")
         fam = fam.replace("_", "")
-        HPO_df.to_csv(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/DECODER/{fam}_HPO_{today}.txt", sep="\t", index=False)
+        print(f"Writing HPO file to /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/{project}/{fam}_HPO_{today}.txt")
+        HPO_df.to_csv(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/{project}/{fam}_HPO_{today}.txt", sep="\t", index=False)
     except JSONDecodeError:
         print(f"Error: did not retrieve HPO and pedigree information for {id}")
 
@@ -269,6 +270,7 @@ parser = argparse.ArgumentParser(description='Process sample sheet and credentia
 parser.add_argument('-sample_sheet', help='Tab-separated sample sheet file', required=False)
 parser.add_argument('-credentials', help='Credentials file containing username and password', required=True)
 parser.add_argument('-sample_id', help='Single sample ID to process', required=False)
+parser.add_argument('-project', help='Project ID', required=False, default="DECODER")
 args = parser.parse_args()
 
 credentials = pd.read_csv(args.credentials) 
@@ -287,12 +289,12 @@ def main():
         for id in sample_sheet[ID_col].values:
             print(id)
             fam = id.split(".")[0]
-            if '.03' in id: # proband ID
-                process_sample(id, fam, auth, pid_url, pedigree_url)
+            if '.03' in id or id.endswith("-03"): # proband ID
+                process_sample(id, fam, auth, pid_url, pedigree_url, args.project)
     elif args.sample_id: 
         id = args.sample_id
         fam = id.split(".")[0]
-        process_sample(id, fam, auth, pid_url, pedigree_url)
+        process_sample(id, fam, auth, pid_url, pedigree_url, args.project)
     else:
         print("Error: no sample ID or sample sheet provided")
 
