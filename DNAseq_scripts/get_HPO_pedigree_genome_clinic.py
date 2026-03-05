@@ -1,6 +1,6 @@
 import argparse
 from datetime import date
-from json import JSONDecodeError
+from simplejson import JSONDecodeError
 import pandas as pd
 import requests
 
