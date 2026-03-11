@@ -60,6 +60,10 @@ def get_pedigree_info(ped) -> [dict, str]:
     proband_id = ped['pedigree']['proband']
     proband_id = node_to_C4R[proband_id]
     print(f"Proband in pedigree is {proband_id}")
+
+    # mark proband within members dict for downstream use
+    if proband_id in members:
+        members[proband_id]["is_proband"] = True
     
     return members, proband_id
 
@@ -127,7 +131,11 @@ def write_pedigree(members: dict, family: str, project: str) -> None:
             else:
                 sex = "other"
             affected = member.get("affected")
-            phenotype = 2 if affected == "affected" else 0
+            # phenotype: 2 for proband or affected, 0 otherwise
+            if member.get("is_proband"):
+                phenotype = 2
+            else:
+                phenotype = 2 if affected == "affected" else 0
             paternal_id = 0
             maternal_id = 0
             if member.get("parents_eid"):
