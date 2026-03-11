@@ -60,7 +60,7 @@ do
 
     if [ "$family" != "Family_ID" ]; then
         echo $family 
-        if [[ "$family" == *"DSK"* ]]; then
+        if [[ "$family" == *"DSK"* || "$family" == *"GYM"* ]]; then
                 project_id=`echo $project_id | tr -d '_' | tr '.' '_' | tr -d '\r'` # e.g. convert DSK_018.03 to DSK018_03 so crg2-pacbio doesn't mess up wildcards
                 project_family=`echo $project_id | cut -d '_' -f1`
                 sequence_id=`echo $sequence_id | tr -d '\r'`
@@ -86,7 +86,7 @@ do
 
                 # add HPO terms to config.yaml
                  echo "Finding HPO terms"
-                 if [[ "$family" == *"DSK"* ]]; then
+                 if [[ "$family" == *"DSK"* || "$family" == *"GYM"* ]]; then
                         HPO=`ls -t /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/${project}/${project_family}* | head -n 1` # get most recent HPO file
                         echo $HPO
                  elif [[ "$family" == *"GD"* ]]; then
@@ -123,7 +123,11 @@ do
                 if [ ! -f $deepvariant ]; then
                         deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}.joint.GRCh38.small_variants.phased.vcf.gz
                         if [ ! -f $deepvariant ]; then
-                                tcag_family=`echo $family | sed 's/DSK_/DSK_DNA_/'`
+                                if [[ "$family" == *"DSK"* ]]; then
+                                        tcag_family=`echo $family | sed 's/DSK_/DSK_DNA_/'`
+                                elif [[ "$family" == *"GYM"* ]]; then
+                                        tcag_family=`echo $family | sed 's/GYM_/GYM_DNA_/'`
+                                fi
                                 deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${tcag_family}-cohort.joint.GRCh38.small_variants.phased.vcf.gz
                                 if [ ! -f $deepvariant ]; then
                                         deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${sequence_id}.GRCh38.small_variants.phased.vcf.gz # singleton sample
@@ -134,7 +138,11 @@ do
                 if [ ! -f $sv ]; then
                         sv=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}.joint.GRCh38.structural_variants.phased.vcf.gz
                         if [ ! -f $sv ]; then
-                                tcag_family=`echo $family | sed 's/DSK_/DSK_DNA_/'`
+                                if [[ "$family" == *"DSK"* ]]; then
+                                        tcag_family=`echo $family | sed 's/DSK_/DSK_DNA_/'`
+                                elif [[ "$family" == *"GYM"* ]]; then
+                                        tcag_family=`echo $family | sed 's/GYM_/GYM_DNA_/'`
+                                fi
                                 sv=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${tcag_family}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz
                                 if [ ! -f $sv ]; then
                                         sv=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${sequence_id}.GRCh38.structural_variants.phased.vcf.gz  # singleton sample
@@ -181,7 +189,7 @@ do
 
         # replace sample names in VCFs
         echo "Replacing sample IDs in VCFs"
-        deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}-cohort.joint.GRCh38.small_variants.phased.vcf.gz
+        #deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}-cohort.joint.GRCh38.small_variants.phased.vcf.gz
         if [ ! -f $deepvariant ]; then
                 deepvariant=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}.joint.GRCh38.small_variants.phased.vcf.gz
                 if [ ! -f $deepvariant ]; then
@@ -192,7 +200,7 @@ do
 			fi
                 fi
         fi
-        sv=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz
+        #sv=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz
         if [ ! -f $sv ]; then
                 sv=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${project}/${family}.joint.GRCh38.structural_variants.phased.vcf.gz
                 if [ ! -f $sv ]; then
@@ -232,7 +240,7 @@ do
          echo $project_family
          if [ "$project_family" != "Decoder_ID" ] && [[ "$project_family" != "TG_ID" ]]; then
               # check if all samples in analysis TSV are represented in the pedigree 
-              if [[ "$project_family" == *"DSK"* ]]; then
+              if [[ "$project_family" == *"DSK"* || "$project_family" == *"GYM"* ]]; then
                 ped_family=`echo $project_family | tr -d '_'`
               else
                 ped_family=$project_family
