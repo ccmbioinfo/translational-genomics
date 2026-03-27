@@ -30,7 +30,7 @@ BASE = Path("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis")
 HPO_DIR = BASE / "HPO"
 PED_DIR = BASE / "pedigrees"
 FILES_FROM_IRODS = BASE / "files_from_irods"
-ANALYSES_BASE = BASE / "analyses/test"
+ANALYSES_BASE = BASE / "analyses"
 
 
 @dataclass(frozen=True)
@@ -444,8 +444,8 @@ def validate_pedigrees(analysis_rows: list[AnalysisRow], analyses_path: Path, pr
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Set up crg2-pacbio analysis directories for PacBio inputs.")
-    ap.add_argument("analyses", type=Path, help="Path to sample metadata TSV")
-    ap.add_argument("project", help="Project ID, e.g. DECODER")
+    ap.add_argument("--analyses", type=Path, help="Path to sample metadata TSV")
+    ap.add_argument("--project", help="Project ID, e.g. DECODER")
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
     ap.add_argument("--crg2-pacbio", dest="crg2_pacbio", type=Path, default=REPO_ROOT_DEFAULT_CRG2_PACBIO, help="Path to crg2-pacbio repo (default: ~/crg2-pacbio)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
