@@ -108,9 +108,10 @@ def _strip_cr(s: str) -> str:
 
 def normalize_project_id(family: str, project_id: str) -> str:
     """
-    Mirrors the bash normalization:
-      - DSK/GYM: tr -d '_' | tr '.' '_' | tr -d '\r'
-      - GD: sed 's/GD-/GD/' | tr '-' '_' | tr -d '\r'
+    Normlize TG project IDs to crg2-pacbio compatible IDs:
+      - DSK_001.03 -> DSK001_03
+      - GYM_001.03 -> GYM001_03
+      - GD-001-03 -> GD001_03
     """
     project_id = _strip_cr(project_id)
     if ("DSK" in family) or ("GYM" in family):
@@ -274,9 +275,7 @@ def parse_analysis_tsv(path: Path) -> list[AnalysisRow]:
 
 def init_existing_family_dirs(analysis_rows: list[AnalysisRow], analysis_dir: Path, today: str) -> None:
     """
-    Mirrors:
-      for project_family in `awk '{print $3}' analyses | cut -d '.' -f1 | tr -d '_' | uniq`
-        if dir exists: recreate samples.tsv with header
+    Set up analysis directories for families that already exist.
     """
     seen: set[str] = set()
     for r in analysis_rows:
