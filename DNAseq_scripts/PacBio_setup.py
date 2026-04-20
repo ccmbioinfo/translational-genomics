@@ -13,6 +13,7 @@ import argparse
 import csv
 import datetime as _dt
 import glob
+import logging
 import os
 import shutil
 import subprocess
@@ -32,6 +33,8 @@ PED_DIR = BASE / "pedigrees"
 FILES_FROM_IRODS = BASE / "files_from_irods"
 ANALYSES_BASE = BASE / "analyses"
 
+LOG = logging.getLogger("PacBio_setup")
+
 
 @dataclass(frozen=True)
 class AnalysisRow:
@@ -46,18 +49,30 @@ class AnalysisRow:
 
 
 def _run(cmd: list[str], *, cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd else None,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
+    LOG.info("Running command: %s", " ".join(cmd))
+    if cwd:
+        LOG.debug("  cwd=%s", cwd)
+    try:
+        return subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as e:
+        # Keep exceptions (and exit code) but make stderr/stdout visible in logs.
+        if e.stdout:
+            LOG.error("Command stdout:\n%s", e.stdout.rstrip())
+        if e.stderr:
+            LOG.error("Command stderr:\n%s", e.stderr.rstrip())
+        raise
 
 
 def _which_or_die(exe: str) -> None:
     if shutil.which(exe) is None:
         raise SystemExit(f"Error: required executable not found on PATH: {exe}")
+    LOG.debug("Found executable on PATH: %s", exe)
 
 
 def _latest_matching(glob_pat: str) -> Optional[Path]:
@@ -191,6 +206,7 @@ def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
     picked = _glob_latest(candidates)
     if picked is None:
         raise FileNotFoundError(f"Could not find deepvariant VCF for family={family} sequence_id={sequence_id} project={project}")
+    LOG.debug("Found deepvariant VCF: %s", picked)
     return picked
 
 
@@ -210,6 +226,7 @@ def pick_sv(project: str, family: str, sequence_id: str) -> Path:
     picked = _glob_latest(candidates)
     if picked is None:
         raise FileNotFoundError(f"Could not find structural variants VCF for family={family} sequence_id={sequence_id} project={project}")
+    LOG.debug("Found structural VCF: %s", picked)
     return picked
 
 def find_hpo(project: str, family: str, project_family: str) -> Optional[Path]:
@@ -245,6 +262,8 @@ def bcftools_reheader_inplace(vcfgz: Path, mapping_file: Path) -> None:
         f"bcftools reheader -s {mapping_file} {vcfgz} "
         f"| bcftools view -Oz -o {out_tmp}"
     )
+    LOG.info("Reheadering VCF (in place): %s", vcfgz)
+    LOG.debug("  mapping_file=%s", mapping_file)
     subprocess.run(cmd, shell=True, check=True)
     out_tmp.replace(vcfgz)
 
@@ -254,6 +273,7 @@ def bcftools_query_sample(vcfgz: Path) -> str:
     line = (cp.stdout or "").splitlines()
     if not line:
         raise RuntimeError(f"bcftools query -l returned no samples for {vcfgz}")
+    LOG.debug("Sample in %s: %s", vcfgz, line[0].strip())
     return line[0].strip()
 
 
@@ -287,6 +307,7 @@ def init_existing_family_dirs(analysis_rows: list[AnalysisRow], analysis_dir: Pa
         seen.add(project_family)
         family_dir = analysis_dir / project_family / f"PacBio_{today}"
         if family_dir.is_dir():
+            LOG.info("Resetting existing samples.tsv for: %s", family_dir)
             samples_tsv = family_dir / "samples.tsv"
             samples_tsv.write_text("sample\tbam\tcase_or_control\n")
 
@@ -310,6 +331,7 @@ def setup_family_once(
     sv = pick_sv(project, family, sequence_id)
 
     if not family_dir.exists():
+        LOG.info("Creating family analysis directory: %s", family_dir)
         ensure_dir(family_dir)
 
         # Copy pipeline files
@@ -325,6 +347,7 @@ def setup_family_once(
         config_path = family_dir / "config.yaml"
         hpo = find_hpo(project, family, project_family)
         ped = find_pedigree(project, family, project_family)
+        LOG.info("Writing config.yaml (HPO=%s, PED=%s)", str(hpo) if hpo else "None", str(ped) if ped else "None")
         rewrite_config_yaml(config_path, project_family=project_family, hpo=hpo, ped=ped)
 
         # Create samples.tsv / units.tsv
@@ -356,6 +379,7 @@ def add_sample_inputs(
         except IndexError:
             raise FileNotFoundError(f"No BAM found for {sequence_id}")
     project_sample = project_sample_from_project_id(project_id_norm)
+    LOG.info("Adding sample to samples.tsv: %s (bam=%s)", project_sample, bam)
     with (family_dir / "samples.tsv").open("a") as out:
         out.write(f"{project_sample}\t{bam}\n")
 
@@ -364,12 +388,14 @@ def add_sample_inputs(
     ensure_dir(cnv_dir)
     cnv_src_exact = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.hificnv.vcf.gz"
     if cnv_src_exact.exists():
+        LOG.info("Copying CNV VCF: %s", cnv_src_exact)
         copy_with_sidecars(cnv_src_exact, cnv_dir)
     else:
         patt = f"hificnv*{sequence_id}*.vcf.gz"
         matches = sorted((FILES_FROM_IRODS / project).glob(patt))
         if not matches:
             raise FileNotFoundError(f"No CNV VCFs found for {sequence_id} (pattern {patt})")
+        LOG.info("Copying %d CNV VCF(s) matching %s", len(matches), patt)
         for m in matches:
             copy_with_sidecars(m, cnv_dir)
 
@@ -392,6 +418,7 @@ def add_sample_inputs(
         map_cnv_to_proj = Path(tf.name)
     try:
         bcftools_reheader_inplace(cnv_vcf, map_cnv_to_proj)
+        LOG.info("Indexing CNV VCF with tabix: %s", cnv_vcf)
         _run(["tabix", str(cnv_vcf)])
     finally:
         map_cnv_to_proj.unlink()
@@ -419,6 +446,7 @@ def validate_pedigrees(analysis_rows: list[AnalysisRow], analyses_path: Path, pr
         if not ped_matches:
             raise FileNotFoundError(f"No pedigree found for {project_family} (looked for {ped_family}*)")
         ped = ped_matches[0]
+        LOG.info("Validating pedigree: %s", ped)
 
         ped_samples: set[str] = set()
         with ped.open() as f:
@@ -439,6 +467,24 @@ def validate_pedigrees(analysis_rows: list[AnalysisRow], analyses_path: Path, pr
             sample = _strip_cr(rr.project_id_raw).replace("_", "").replace(".", "_")
             if sample not in ped_samples:
                 raise SystemExit(f"Sample {sample} not found in pedigree for {project_family}, exiting")
+    LOG.info("Pedigree validation passed.")
+
+
+def _configure_logging(*, level: str = "INFO", log_file: Optional[Path] = None) -> None:
+    """
+    Configure console logging (stderr) and optional file logging.
+    """
+    numeric = getattr(logging, level.upper(), None)
+    if not isinstance(numeric, int):
+        raise SystemExit(f"Error: invalid --log-level {level!r} (use DEBUG, INFO, WARNING, ERROR)")
+
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_file is not None:
+        ensure_dir(log_file.parent)
+        handlers.append(logging.FileHandler(str(log_file)))
+
+    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    logging.basicConfig(level=numeric, format=fmt, handlers=handlers)
 
 
 def main(argv: list[str]) -> int:
@@ -448,10 +494,17 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
     ap.add_argument("--crg2-pacbio", dest="crg2_pacbio", type=Path, default=REPO_ROOT_DEFAULT_CRG2_PACBIO, help="Path to crg2-pacbio repo (default: ~/crg2-pacbio)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
+    ap.add_argument("--log-level", default="INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR). Default: INFO.")
+    ap.add_argument("--log-file", type=Path, default=None, help="Optional path to write logs (in addition to stderr).")
     args = ap.parse_args(argv)
+
+    _configure_logging(level=args.log_level, log_file=args.log_file)
 
     if not args.analyses.is_file():
         raise SystemExit(f"Error: sample file does not exist: {args.analyses}")
+
+    LOG.info("Starting PacBio setup")
+    LOG.info("analyses=%s project=%s today=%s", args.analyses, args.project, args.today or _dt.date.today().isoformat())
 
     _which_or_die("bcftools")
     _which_or_die("tabix")
@@ -462,8 +515,10 @@ def main(argv: list[str]) -> int:
     ensure_dir(analysis_dir)
 
     rows = parse_analysis_tsv(args.analyses)
+    LOG.info("Parsed %d row(s) from analysis TSV", len(rows))
 
     # Download HPO + pedigrees from Phenotips (mirrors bash)
+    LOG.info("Downloading HPO terms + pedigrees from Phenotips")
     _run(
         [
             "python3",
@@ -486,6 +541,7 @@ def main(argv: list[str]) -> int:
 
         family = r.family
         sequence_id = _strip_cr(r.sequence_id)
+        LOG.info("Processing family=%s sequence_id=%s project_id=%s sample_type=%s", family, sequence_id, _strip_cr(r.project_id_raw), r.sample_type)
 
         try:
             project_id_norm = normalize_project_id(family, r.project_id_raw)
@@ -516,6 +572,7 @@ def main(argv: list[str]) -> int:
         )
 
     validate_pedigrees(rows, args.analyses, args.project)
+    LOG.info("Done.")
     return 0
 
 
