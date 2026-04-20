@@ -11,4 +11,4 @@ PHASED_GT=$4 # phased genotype for variant in question, e.g. "0|1"
 SAMPLE_CRG2=`echo $SAMPLE | sed 's/_DNA_//' | sed 's/-A1//' | sed 's/-/_/g'`
 OUTDIR="../../../results/phased_variants/"
 echo -e "CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tGENOTYPE" > $OUTDIR/${SAMPLE}_variants.txt 
-bcftools view $VCF -s $SAMPLE | bcftools filter -i "TYPE='snp' & FORMAT/PS = $PS" | bcftools query -f '%CHROM\t%POS0\t%ID\t%REF\t%ALT\t%QUAL\t%FILTER\t[%SAMPLE=%GT]\n' | grep "$PHASED_GT" >> $OUTDIR/${SAMPLE_CRG2}_variants.txt
+bcftools view $VCF -s $SAMPLE | bcftools filter -i "TYPE='snp' & FORMAT/PS = $PS" | bcftools query -f '%CHROM\t%POS\t%ID\t%REF\t%ALT\t%QUAL\t%FILTER\t[%SAMPLE=%GT]\n' | grep "$PHASED_GT" >> $OUTDIR/${SAMPLE_CRG2}_variants.txt
