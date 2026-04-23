@@ -188,7 +188,7 @@ def hpo_to_gene_mapping(hpo_ids: list) -> pd.DataFrame:
 
 def get_ensembl_from_hgnc(hpo_agg: pd.DataFrame) -> pd.DataFrame:
     """Get Ensembl IDs for genes from HGNC mapping"""
-    hgnc_mapping = pd.read_csv("/hpf/largeprojects/ccmbio/ccmmarvin_shared/pacbio_longread_pilot_phase_1/annotate_SV/HPO/HGNC_ensembl_map.csv")
+    hgnc_mapping = pd.read_csv("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/download/HGNC_ensembl_map.csv")
     hpo_agg_ens = hpo_agg.merge(hgnc_mapping, left_on="gene_symbol", right_on="hgnc_symbol", how="left")
     
     return hpo_agg_ens
