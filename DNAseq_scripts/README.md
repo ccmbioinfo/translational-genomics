@@ -24,16 +24,6 @@ Converts HPO terms stored in Excel format to text files. Specifically:
 Usage:
 `python3 HPO_excel_to_text.py`
 
-### organize_crg2-pacbio_reports.sh
-Organizes analysis reports from the crg2-pacbio pipeline:
-- Copies and organizes various report types (coding, panel, CNV, SV, etc.)
-- Adds HPO terms to small variant reports
-- Consolidates reports into a single directory
-- One argument: `analysis path`, e.g. DSK002/PacBio
-
-Usage:
-`sh organize_crg2-pacbio_reports.sh <analysis_path>`
-
 ### query_files_from_irods.sh
 A bash script that queries the iRods paths for crg2-pacbio input files, such as the small variant VCFs, BAMs, etc. 
 - Takes two arguments:
@@ -45,8 +35,8 @@ Usage:
 `sh query_files_from_irods.sh <LIMSID> <project>`
 
 ### PacBio_setup.sh
-A bash script that sets up analysis directories and configuration for PacBio LRWGS processing:
-- Takes three arguments:
+A bash script that calls `PacBio_setup.py` to set up analysis directories and configuration for PacBio LRWGS processing:
+- Takes two arguments:
     - `analyses`: Tab-separated sample sheet with Family_ID, Sample_ID, and Decoder_ID columns
     - `project`: Project name (e.g., genesteps or DECODER)
 - Sets up analysis directories with required pipeline files
@@ -54,7 +44,7 @@ A bash script that sets up analysis directories and configuration for PacBio LRW
 - Handles sample renaming and file organization
 
 Usage:
-`sh PacBio_setup.sh <analyses TSV> <iRods_date> <project>`
+`sh PacBio_setup.sh <analyses TSV> <project>`
 
 ### run_TRGT_repeat_outliers_and_denovo.sh
 Sets up and configures TRGT outlier and de novo repeat analyses for a family:
@@ -67,7 +57,7 @@ Sets up and configures TRGT outlier and de novo repeat analyses for a family:
 Usage:
 `sh run_TRGT_repeat_outliers_and_denovo.sh <family> <project>`
 
-### visualize_repeat.sh
+### visualize_TRGT_repeat.sh
 Creates visualization plots for repeat regions:
 - Takes three arguments:
     - `VCF`: Input VCF file
@@ -88,3 +78,43 @@ Sets up CRG2 pipeline reanalysis for sequences (WES or WGS) from SickKids DPLM c
 
 Usage:
 `sh WGS_reanalysis_DPLM_input.sh <sample TSV> <project name>`
+
+### WGS_reanalysis_C4R.sh
+Sets up CRG2 pipeline reanalysis for genomes from C4R:
+- Takes sample TSV file and project name (e.g. DECODER) as input
+- Validates input files and directories
+- Processes sample IDs and sets up analysis directories
+- Handles DECODER ID formatting for pipeline compatibility
+- Looks for files in /hpf/largeprojects/tgnode/data/C4R/
+
+Usage:
+`sh WGS_reanalysis_C4R.sh <sample TSV> <project name>`
+
+### cleanup.py
+Pulls completed analyses from sample sheet with input files from DPLM, GeneDx, and Prevention Genetics, and moves input files to trash directory `/hpf/largeprojects/tgnode/trash`. 
+
+Usage:
+`python3 cleanup.py`
+
+### DRAGEN_setup.py
+Sets up CPHI-DRAGEN-anno pipeline runs for PCHseq data.
+
+Usage:
+`python3 DRAGEN_setup.py --analyses <sample_metadata_TSV> --project <project_ID> [--creds <phenotips_credentials_CSV>] [--cphi-dragen-anno <CPHI-DRAGEN-anno_repo_path>] [--today <YYYY-MM-DD>]`
+
+- `--analyses`: Path to sample metadata TSV file
+- `--project`: Project ID (e.g., DECODER)
+- `--creds`: (Optional) Phenotips credentials CSV (default: PT_credentials.csv)
+- `--cphi-dragen-anno`: (Optional) Path to CPHI-DRAGEN-anno repo (default: ~/CPHI-DRAGEN-anno)
+- `--today`: (Optional) Override date stamp (YYYY-MM-DD). Default: today.
+
+### get_phased_variants.sh
+Query all SNVs in a specified phase block (haplotype block) that are in phase with a variant of interest. 
+To obtain the phase set ID and phased genotype, first query the variant coordinates, i.e. tabix $VCF chr:pos-end
+
+- Accepts a VCF file, sample name, phase set ID, and phased genotype as inputs
+- Filters variants with phased genotype and a valid PS tag
+- Outputs a table of phased variants for downstream analysis
+
+Usage:
+`sh get_phased_variants.sh <input.vcf> <phase set ID> <sample name> <genotype, e.g. "0|1">`
