@@ -7,7 +7,7 @@ OUT=/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/${PROJECT
 echo "Filepaths will be saved to $OUT"
 
 # retrieve deep variant joint-genotyped VCF
-{ iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.small_variants.phased.vcf.gz%'" | grep 'fam\|cohort' > $OUT; } || { iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.deepvariant.phased.vcf.gz%'" | grep 'fam\|cohort' > $OUT; }
+{ iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.small_variants.phased.vcf.gz%'" | grep 'fam\|cohort' > $OUT; } || { iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.deepvariant.phased.vcf.gz%'" | grep 'fam\|cohort' > $OUT; } || { iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.deepvariant.glnexus.phased.vcf.gz%'" | grep 'fam\|cohort' > $OUT; }
 
 # retrieve joint-genotyped SV VCF
 { iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.structural_variants.phased.vcf.gz%'" | grep 'fam\|cohort' >> $OUT; } || { iquest "%s/%s" "SELECT COLL_NAME, DATA_NAME where COLL_NAME like '%$LIMSID%' and DATA_NAME like '%GRCh38.pbsv.phased.vcf.gz%'" | grep 'fam\|cohort' >> $OUT; }
