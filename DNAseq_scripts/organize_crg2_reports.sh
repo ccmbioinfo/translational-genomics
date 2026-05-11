@@ -5,6 +5,16 @@ module load python/3.7.1
 analysis=$1 # e.g. DSK002/WGS_reanalysis
 ngs=$2
 
+if [[ -z $analysis ]]; then
+    echo "Please provide an analysis path"
+    exit 1
+fi
+
+if [[ -z $ngs ]]; then
+    echo "Please provide a sequencing type (WGS or WES)"
+    exit 1
+fi
+
 family=`dirname $analysis`
 HPO=$(ls /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/*/${family}* | tail -n 1)
 
@@ -51,4 +61,10 @@ do
         rm $f
     fi
 done
+
+if [[ "$ngs" == "WGS" ]]; then
+	f=`echo ${analysis}/report/all/*denovo*csv`
+	python3 ~/crg2-pacbio/utils/add_hpo_terms_to_wes.py $HPO $f
+	rm $f
+fi
 
