@@ -7,7 +7,7 @@ import pathlib
 
 data_dir = "/hpf/largeprojects/tgnode/data"
 trash_dir = "/hpf/largeprojects/tgnode/trash"
-sample_sheet = "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/sample_sheets/DECODER/DECODER_analyses_all.tsv"
+sample_sheet = "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/sample_sheets/DECODER/DECODER_analyses.tsv"
 log_file = f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/logs/cleanup_{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
 
 logging.basicConfig(filename=log_file, level=logging.INFO)
