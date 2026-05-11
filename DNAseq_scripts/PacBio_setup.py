@@ -193,12 +193,14 @@ def rewrite_config_yaml(config_path: Path, *, project_family: str, hpo: Optional
 def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
     base = FILES_FROM_IRODS / project
     sequence_fam = sequence_id.split("_")[0] # may need this for DECODER samples sequenced under C4R IDs, e.g. 1741_SK0123
+    family_with_DNA = family.replace("DSK_", "DSK_DNA_")
     candidates = [
         base / f"{family}-cohort.joint.GRCh38.small_variants.phased.vcf.gz",
         base / f"{family}.joint.GRCh38.small_variants.phased.vcf.gz", # TCAG does not always consistently name joint-genotyped VCFs
         base / f"{sequence_id}.GRCh38.small_variants.phased.vcf.gz", # singleton sample, so no joint-genotyped VCF
         base / f"{family}-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz", # file naming for older PacBio pipeline runs
         base / f"{sequence_fam}-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz", # file naming for older PacBio pipeline runs
+        base / f"{family_with_DNA}-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz", # e.g. DSK_DNA_003-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz
     ]
     tcag = tcag_family_if_needed(family)
     if tcag:
@@ -213,12 +215,14 @@ def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
 def pick_sv(project: str, family: str, sequence_id: str) -> Path:
     base = FILES_FROM_IRODS / project
     sequence_fam = sequence_id.split("_")[0] # may need this for DECODER samples sequenced under C4R IDs, e.g. 1741_SK0123
+    family_with_DNA = family.replace("DSK_", "DSK_DNA_")
     candidates = [
         base / f"{family}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz",
         base / f"{family}.joint.GRCh38.structural_variants.phased.vcf.gz",
         base / f"{sequence_id}.GRCh38.structural_variants.phased.vcf.gz", # singleton sample, so no joint-genotyped VCF
         base / f"{family}-fam.joint.GRCh38.pbsv.phased.vcf.gz", # file naming for older PacBio pipeline runs
-        base / f"{sequence_fam}-fam.joint.GRCh38.pbsv.phased.vcf.gz", # file naming for older PacBio pipeline runs
+        base / f"{sequence_fam}-fam.joint.GRCh38.pbsv.phased.vcf.gz", # file naming for older PacBio pipeline runs,
+        base / f"{family_with_DNA}-fam.joint.GRCh38.pbsv.phased.vcf.gz", # e.g. DSK_DNA_003-fam.joint.GRCh38.pbsv.phased.vcf.gz
     ]
     tcag = tcag_family_if_needed(family)
     if tcag:
@@ -309,7 +313,7 @@ def init_existing_family_dirs(analysis_rows: list[AnalysisRow], analysis_dir: Pa
         if family_dir.is_dir():
             LOG.info("Resetting existing samples.tsv for: %s", family_dir)
             samples_tsv = family_dir / "samples.tsv"
-            samples_tsv.write_text("sample\tbam\tcase_or_control\n")
+            samples_tsv.write_text("sample\tBAM\tcase_or_control\n")
 
 
 def setup_family_once(
