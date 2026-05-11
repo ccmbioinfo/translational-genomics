@@ -5,6 +5,8 @@ import pandas as pd
 import os
 import pathlib
 
+# TODO: check CRAM MD5sums for each sample 
+
 data_dir = "/hpf/largeprojects/tgnode/data"
 trash_dir = "/hpf/largeprojects/tgnode/trash"
 sample_sheet = "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/sample_sheets/DECODER/DECODER_analyses.tsv"
