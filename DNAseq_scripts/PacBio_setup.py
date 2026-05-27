@@ -199,9 +199,10 @@ def rewrite_config_yaml(config_path: Path, *, project_family: str, hpo: Optional
 def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
     base = FILES_FROM_IRODS / project
     sequence_fam = sequence_id.split("_")[0] # may need this for DECODER samples sequenced under C4R IDs, e.g. 1741_SK0123
-    family_with_DNA = family.replace("DSK_", "DSK_DNA_")
+    family_with_DNA = family.replace("DSK_", "DSK_DNA_").replace("GYM_", "GYM_DNA_")
     candidates = [
         base / f"{family}-cohort.joint.GRCh38.small_variants.phased.vcf.gz",
+        base / f"{family_with_DNA}-cohort.joint.GRCh38.small_variants.phased.vcf.gz",
         base / f"{family}.joint.GRCh38.small_variants.phased.vcf.gz", # TCAG does not always consistently name joint-genotyped VCFs
         base / f"{sequence_id}.GRCh38.small_variants.phased.vcf.gz", # singleton sample, so no joint-genotyped VCF
         base / f"{family}-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz", # file naming for older PacBio pipeline runs
@@ -221,9 +222,10 @@ def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
 def pick_sv(project: str, family: str, sequence_id: str) -> Path:
     base = FILES_FROM_IRODS / project
     sequence_fam = sequence_id.split("_")[0] # may need this for DECODER samples sequenced under C4R IDs, e.g. 1741_SK0123
-    family_with_DNA = family.replace("DSK_", "DSK_DNA_")
+    family_with_DNA = family.replace("DSK_", "DSK_DNA_").replace("GYM_", "GYM_DNA_")
     candidates = [
         base / f"{family}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz",
+        base / f"{family_with_DNA}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz",
         base / f"{family}.joint.GRCh38.structural_variants.phased.vcf.gz",
         base / f"{sequence_id}.GRCh38.structural_variants.phased.vcf.gz", # singleton sample, so no joint-genotyped VCF
         base / f"{family}-fam.joint.GRCh38.pbsv.phased.vcf.gz", # file naming for older PacBio pipeline runs
