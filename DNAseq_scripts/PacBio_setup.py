@@ -127,14 +127,20 @@ def normalize_project_id(family: str, project_id: str) -> str:
       - DSK_001.03 -> DSK001_03
       - GYM_001.03 -> GYM001_03
       - GD-001-03 -> GD001_03
+      - C4R IDs (e.g. 1848) do not need to be normalized
     """
     project_id = _strip_cr(project_id)
+    # Handle DSK and GYM families
     if ("DSK" in family) or ("GYM" in family):
         return project_id.replace("_", "").replace(".", "_")
+    # Handle GD family
     if "GD" in family:
         if project_id.startswith("GD-"):
             project_id = "GD" + project_id[len("GD-") :]
         return project_id.replace("-", "_")
+    # Handle C4R family
+    if family.isdigit():
+        return project_id
     raise ValueError(f"Family {family} not found / unsupported")
 
 
