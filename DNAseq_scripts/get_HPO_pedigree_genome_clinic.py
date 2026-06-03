@@ -4,6 +4,40 @@ from simplejson import JSONDecodeError
 import pandas as pd
 import requests
 
+def sample_id_to_family_id(sample_id: str, project: str) -> str:
+    """
+    Convert sample ID to family ID
+    """
+    if project == "DECODER" or project == "ataxia" or project == "sickkidsseq":
+        fam = sample_id.split(".")[0]
+    elif project == "genoderm":
+        fam = sample_id.rsplit("-", 1)[0]
+    else:
+        print(f"Error: project {project} not supported")
+        exit(1)
+    return fam
+
+def normalize_family_id(family: str) -> str:
+    """
+    Normalize family IDs so directory names are consistent across runs.
+    - Drop anything after a '.' (some inputs include suffixes)
+    - Remove '_' and '-' characters
+    """
+    return family.split(".", 1)[0].replace("_", "").replace("-", "")
+
+def normalize_sample_id(sample_id: str, project: str) -> str:
+    """
+    Normalize sample IDs
+    - Drop anything after a '.' (some inputs include suffixes)
+    - Remove '_' and '-' characters
+    """
+    if project == "DECODER" or project == "ataxia" or project == "sickkidsseq":
+        return sample_id.replace("_", "").replace(".", "_")
+    elif project == "genoderm":
+        return sample_id.replace("GD-", "GD").replace("-", "_")
+    else:
+        return sample_id
+
 def get_pedigree_info(ped) -> [dict, str]:
     """
     JSON response contains pedigree and family objects
@@ -113,11 +147,12 @@ def get_parents(node_id: int, relationships: dict) -> list:
 
     return parents
 
-def write_pedigree(members: dict, family: str, project: str) -> None:
+def write_pedigree(members: dict, family: str, project: str, rename: bool) -> None:
     """
     Write a pedigree text file given dictionary derived from Phenotips pedigree JSON
     """
-    family = family.replace("_", "")
+    if rename:
+        family = normalize_family_id(family)
     print(f"Writing pedigree file to /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/{project}/{family}_pedigree.ped")
     with open(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/pedigrees/{project}/{family}_pedigree.ped", "w") as f:
         for member in members:
@@ -146,15 +181,16 @@ def write_pedigree(members: dict, family: str, project: str) -> None:
                     else:
                         maternal_id = p
             # convert IDs to crg2-pacbio compatible IDs
-            sample_id = sample_id.replace("_", "").replace(".", "_")
-            try:
-                paternal_id = paternal_id.replace("_", "").replace(".", "_")
-            except:
-                pass
-            try:
-                maternal_id = maternal_id.replace("_", "").replace(".", "_")
-            except:
-                pass
+            if rename:
+                sample_id = normalize_sample_id(sample_id, project)
+                try:
+                    paternal_id = normalize_sample_id(paternal_id, project)
+                except:
+                    pass
+                try:
+                    maternal_id = normalize_sample_id(maternal_id, project)
+                except:
+                    pass
             f.write(
                 f"{family_id} {sample_id} {paternal_id} {maternal_id} {sex} {phenotype}\n"
             )
@@ -253,7 +289,7 @@ def get_HPO_gene_mapping(hpo_ids: list) -> pd.DataFrame:
     
     return hpo_agg_ens
 
-def process_sample(id, fam, auth, pid_url, pedigree_url, project):
+def process_sample(id, fam, auth, pid_url, pedigree_url, project, rename):
     response = requests.get(f"{pid_url}/{id}", auth=auth)
     try:
         pid = response.json().get('id')
@@ -261,7 +297,7 @@ def process_sample(id, fam, auth, pid_url, pedigree_url, project):
         response = requests.get(pedigree_url, params=params, auth=auth)
         ped_json = response.json()
         members, proband_id = get_pedigree_info(ped_json)
-        write_pedigree(members, fam, project)
+        write_pedigree(members, fam, project, rename)
         pid_proband = requests.get(f"{pid_url}/{proband_id}", auth=auth).json().get('id')
         HPO_ids = get_HPO_IDs(pid_proband)
         print(f"Number of HPO terms for {id}: {len(HPO_ids)}")
@@ -279,6 +315,7 @@ parser.add_argument('-sample_sheet', help='Tab-separated sample sheet file', req
 parser.add_argument('-credentials', help='Credentials file containing username and password', required=True)
 parser.add_argument('-sample_id', help='Single sample ID to process', required=False)
 parser.add_argument('-project', help='Project ID', required=False, default="DECODER")
+parser.add_argument('-rename', help='Rename sample IDs (True or False)', required=True)
 args = parser.parse_args()
 
 credentials = pd.read_csv(args.credentials) 
@@ -290,19 +327,21 @@ pid_url="https://genomeclinic.ccm.sickkids.ca/rest/patients/eid/"
 pedigree_url=f"https://genomeclinic.ccm.sickkids.ca/get/PhenoTips/FamilyPedigreeInterface"
 
 def main():
+    rename = args.rename.lower() == "true"
+    project = args.project
     if args.sample_sheet:
         sample_sheet = pd.read_csv(args.sample_sheet, sep="\t")
         ID_col = "Decoder_ID" if "Decoder_ID" in sample_sheet.columns else "TG_ID"
         sample_sheet["DECODER_family"] = sample_sheet[ID_col].str.split('.').str[0]
         for id in sample_sheet[ID_col].values:
             print(id)
-            fam = id.split(".")[0]
+            fam = sample_id_to_family_id(id, project)
             if '.03' in id or id.endswith("-03"): # proband ID
-                process_sample(id, fam, auth, pid_url, pedigree_url, args.project)
+                process_sample(id, fam, auth, pid_url, pedigree_url, project, rename)
     elif args.sample_id: 
         id = args.sample_id
-        fam = id.split(".")[0]
-        process_sample(id, fam, auth, pid_url, pedigree_url, args.project)
+        fam = sample_id_to_family_id(id, project)
+        process_sample(id, fam, auth, pid_url, pedigree_url, project, rename)
     else:
         print("Error: no sample ID or sample sheet provided")
 

@@ -541,6 +541,8 @@ def main(argv: list[str]) -> int:
             args.creds,
             "-project",
             args.project,
+            "-rename",
+            "True",
         ]
     )
 
