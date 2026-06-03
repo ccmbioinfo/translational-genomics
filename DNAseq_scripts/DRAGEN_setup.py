@@ -5,16 +5,13 @@ Sets up CPHI-DRAGEN-anno analysis directories and downloads HPO terms from Pheno
 from __future__ import annotations
 
 import argparse
-import csv
 import datetime as _dt
 import glob
 import logging
 import pandas as pd 
-import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -123,10 +120,10 @@ def init_existing_family_dirs(analysis_rows: list[AnalysisRow], analysis_dir: Pa
             reset_count += 1
     logger.info("Reset samples.tsv for %d existing family dir(s)", reset_count)
 
-def rewrite_config_yaml(config_path: Path, *, family_pchseq: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
-    logger.debug("Rewriting config %s (family_pchseq=%s, hpo=%s, ped=%s)", config_path, family_pchseq, hpo, ped)
+def rewrite_config_yaml(config_path: Path, *, family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
+    logger.debug("Rewriting config %s (family=%s, hpo=%s, ped=%s)", config_path, family, hpo, ped)
     txt = config_path.read_text()
-    txt = txt.replace("FAM-000000", family_pchseq)
+    txt = txt.replace("FAM-000000", family)
     if hpo is not None:
         txt = txt.replace('hpo: ""', f'hpo: "{hpo}"')
     else:
@@ -159,6 +156,22 @@ def find_pedigree(DRAGEN_joint_geno_dir: Path, family_pchseq: str) -> Optional[P
         logger.warning("Expected pedigree not found: %s", ped)
     return ped
 
+def find_pedigree_nonCPHI(project: str, family_norm: str, family: str) -> Optional[Path]:
+    base = PED_DIR / project
+    if ("DSK" in family) or ("GYM" in family) or ("SKS" in family):
+        matches = sorted(base.glob(f"{family}*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        hit = matches[0] if matches else None
+    elif "GD" in family:
+        matches = sorted(base.glob(f"{family}*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        hit = matches[0] if matches else None
+    else:
+        hit = None
+    if hit is None:
+        logger.warning("No pedigree file found for family=%s (normalized=%s) under %s", family, family_norm, base)
+    else:
+        logger.debug("Pedigree file for family=%s: %s", family, hit)
+    return hit
+
 def setup_family_once(
     *,
     family: str,
@@ -167,6 +180,7 @@ def setup_family_once(
     family_pchseq: str,
     family_dir: Path,
     lims: str,
+    cphi: bool,
     cphi_dragen_anno: Path,
     today: str,
 ) -> None:
@@ -174,10 +188,15 @@ def setup_family_once(
     Ensure family dir exists and has config + units.tsv + samples.tsv, plus cnv/str dirs.
     Returns (sequence_variant_vcf, SV_vcf, CNV_vcf, repeat_VCF_dir, VNTR_VCF_dir).
     """
-    DRAGEN_joint_geno_dir = PCHSEQ_DIR / PROJECT_DICT[project] / f"{lims}_family" / family_pchseq / "output" 
-    sequence_variant_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.hard-filtered.vcf.gz"
-    SV_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.sv.vcf.gz"
-    CNV_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.cnv.vcf.gz"
+    if cphi:
+        DRAGEN_joint_geno_dir = PCHSEQ_DIR / PROJECT_DICT[project] / f"{lims}_family" / family_pchseq / "output" 
+        sequence_variant_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.hard-filtered.vcf.gz"
+        SV_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.sv.vcf.gz"
+        CNV_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.cnv.vcf.gz"
+    else:
+        sequence_variant_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*hard-filtered.vcf.gz")[0]
+        SV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*sv.with-inv.vcf.gz")[0]
+        CNV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*cnv.vcf.gz")[0]
 
     if family_dir.exists():
         logger.info("Family dir already exists, skipping initial setup: %s", family_dir)
@@ -198,18 +217,30 @@ def setup_family_once(
 
     config_path = family_dir / "config.yaml"
     hpo = find_hpo(project, family, family_norm)
-    ped = find_pedigree(DRAGEN_joint_geno_dir, family_pchseq)
+    if cphi:
+        ped = find_pedigree(DRAGEN_joint_geno_dir, family_pchseq)
+    else:
+        ped = find_pedigree_nonCPHI(project, family_norm, family)
     logger.debug("Copying pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
     shutil.copy2(ped, family_dir / f"{family_pchseq}.ped")
-    rewrite_config_yaml(config_path, family_pchseq=family_pchseq, hpo=hpo, ped=family_dir / f"{family_pchseq}.ped")
+    if cphi:
+        rewrite_config_yaml(config_path, family=family_pchseq, hpo=hpo, ped=ped)
+    else:
+        rewrite_config_yaml(config_path, family=family_norm, hpo=hpo, ped=ped)
 
     (family_dir / "samples.tsv").write_text("sample\tDRAGEN_results_dir\n")
 
     units_tsv = family_dir / "units.tsv"
     units_tsv.write_text("family\tsmall_variant_vcf\tSV_vcf\tCNV_vcf\n")
-    with units_tsv.open("a") as out:
-        out.write(f"{family_pchseq}\t{sequence_variant_vcf}\t{SV_vcf}\t{CNV_vcf}\n")
-    logger.debug("Wrote units.tsv for %s", family_pchseq)
+    if cphi:
+        with units_tsv.open("a") as out:
+            out.write(f"{family_pchseq}\t{sequence_variant_vcf}\t{SV_vcf}\t{CNV_vcf}\n")
+        logger.debug("Wrote units.tsv for %s", family_pchseq)
+
+    else:
+        with units_tsv.open("a") as out:
+            out.write(f"{family_norm}\t{sequence_variant_vcf}\t{SV_vcf}\t{CNV_vcf}\n")
+        logger.debug("Wrote units.tsv for %s", family_norm)
 
 
 def submit_cphi_dragen_anno_slurm(family_dir: Path) -> None:
@@ -231,11 +262,14 @@ def add_sample_inputs(
     project: str,
     sequence_id: str,
     lims: str,
+    cphi: bool,
 ) -> None:
-    dragen_results_dir_sample = PCHSEQ_DIR / PROJECT_DICT[project] / lims / f"{sequence_id}" 
-    if not dragen_results_dir_sample.exists():
-        logger.warning("DRAGEN results dir does not exist (creating): %s", dragen_results_dir_sample)
-    ensure_dir(dragen_results_dir_sample)
+    if cphi:
+        dragen_results_dir_sample = PCHSEQ_DIR / PROJECT_DICT[project] / lims / f"{sequence_id}" 
+    else:
+        dragen_results_dir_sample = f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/"
+    if not Path(dragen_results_dir_sample).exists():
+        raise FileNotFoundError(f"DRAGEN results dir does not exist: {dragen_results_dir_sample}")
     logger.info("Adding sample %s -> %s/samples.tsv", sequence_id, family_dir)
     with (family_dir / "samples.tsv").open("a") as out:
         out.write(f"{sequence_id}\t{dragen_results_dir_sample}\n")
@@ -246,6 +280,7 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Set up CPHI-DRAGEN-anno analysis directories for PCHseq DRAGEN inputs.")
     ap.add_argument("--analyses", type=Path, help="Path to sample metadata TSV")
     ap.add_argument("--project", help="Project ID, e.g. DECODER")
+    ap.add_argument("--cphi", default="True", help="True if CPHI/PCHseq sample, otherwise False")
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
     ap.add_argument("--cphi-dragen-anno", dest="cphi_dragen_anno", type=Path, default=REPO_ROOT_DEFAULT_CPHI_DRAGEN, help="Path to CPHI-DRAGEN-anno repo (default: ~/CPHI-DRAGEN-anno)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
@@ -272,6 +307,9 @@ def main(argv: list[str]) -> int:
     ensure_dir(analysis_dir)
     logger.info("Analysis base dir: %s", analysis_dir)
 
+    cphi = args.cphi.lower() == "true"
+    logger.info("Using CPHI: %s", cphi)
+
     rows = parse_analysis_tsv(args.analyses)
 
     logger.info("Downloading HPO terms and pedigrees from Phenotips")
@@ -285,6 +323,8 @@ def main(argv: list[str]) -> int:
             args.creds,
             "-project",
             args.project,
+            "-rename",
+            "False",
         ]
     )
 
@@ -313,6 +353,7 @@ def main(argv: list[str]) -> int:
                 family_norm=family_norm,
                 family_pchseq=family_pchseq,
                 family_dir=family_dir,
+                cphi=cphi,
                 cphi_dragen_anno=args.cphi_dragen_anno,
                 today=today,
             )
@@ -323,6 +364,7 @@ def main(argv: list[str]) -> int:
                 family_pchseq=family_pchseq,
                 project=args.project,
                 sequence_id=sequence_id,
+                cphi=cphi,
             )
 
             if idx == last_row_index_by_family[family_norm]:
