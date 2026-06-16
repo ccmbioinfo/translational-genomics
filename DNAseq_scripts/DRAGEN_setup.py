@@ -120,10 +120,14 @@ def init_existing_family_dirs(analysis_rows: list[AnalysisRow], analysis_dir: Pa
             reset_count += 1
     logger.info("Reset samples.tsv for %d existing family dir(s)", reset_count)
 
-def rewrite_config_yaml(config_path: Path, *, family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
+def rewrite_config_yaml(config_path: Path, cphi: bool, *, family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
     logger.debug("Rewriting config %s (family=%s, hpo=%s, ped=%s)", config_path, family, hpo, ped)
     txt = config_path.read_text()
     txt = txt.replace("FAM-000000", family)
+    if cphi:
+        txt = txt.replace("cphi: false", "cphi: true")
+    else:
+        txt = txt.replace(' dragen_output_schema: ""', 'dragen_output_schema: "modified"')
     if hpo is not None:
         txt = txt.replace('hpo: ""', f'hpo: "{hpo}"')
     else:
@@ -224,9 +228,9 @@ def setup_family_once(
     logger.debug("Copying pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
     shutil.copy2(ped, family_dir / f"{family_pchseq}.ped")
     if cphi:
-        rewrite_config_yaml(config_path, family=family_pchseq, hpo=hpo, ped=ped)
+        rewrite_config_yaml(config_path, cphi, family=family_pchseq, hpo=hpo, ped=ped)
     else:
-        rewrite_config_yaml(config_path, family=family_norm, hpo=hpo, ped=ped)
+        rewrite_config_yaml(config_path, cphi, family=family_norm, hpo=hpo, ped=ped)
 
     (family_dir / "samples.tsv").write_text("sample\tDRAGEN_results_dir\n")
 
