@@ -107,7 +107,11 @@ do
 		else
 			sed -i "s+ped: \"\"+ped: \"${pedigree}\"+" "${ANALYSIS_DIR_FAM}/config_hpf.yaml"
 		fi
-		
+
+		# Rewrite crg2 path in config and job submission script
+		sed -i "s+~/+/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/+g" "${ANALYSIS_DIR_FAM}/config_hpf.yaml"
+		sed -i "s+~/+/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/+g" "${ANALYSIS_DIR_FAM}/dnaseq_slurm_hpf.sh"
+
 		# Initialize sample files
 		echo "sample" > "${ANALYSIS_DIR_FAM}/samples.tsv"
 		echo -e "sample\tplatform\tfq1\tfq2\tbam\tcram" > "${ANALYSIS_DIR_FAM}/units.tsv"
