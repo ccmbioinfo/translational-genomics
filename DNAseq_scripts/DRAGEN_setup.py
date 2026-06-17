@@ -124,6 +124,7 @@ def rewrite_config_yaml(config_path: Path, cphi: bool, *, family: str, hpo: Opti
     logger.debug("Rewriting config %s (family=%s, hpo=%s, ped=%s)", config_path, family, hpo, ped)
     txt = config_path.read_text()
     txt = txt.replace("FAM-000000", family)
+    txt = txt.replace("~/", "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/")
     if cphi:
         txt = txt.replace("cphi: false", "cphi: true")
     else:

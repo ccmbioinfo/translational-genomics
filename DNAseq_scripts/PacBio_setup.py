@@ -188,6 +188,7 @@ def copy_with_sidecars(src_vcfgz: Path, dest_dir: Path) -> Path:
 def rewrite_config_yaml(config_path: Path, *, project_family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
     txt = config_path.read_text()
     txt = txt.replace("NA12878", project_family)
+    txt = txt.replace("~/", "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/")
     if hpo is not None:
         txt = txt.replace('hpo: ""', f'hpo: "{hpo}"')
     if ped is not None:
@@ -195,6 +196,11 @@ def rewrite_config_yaml(config_path: Path, *, project_family: str, hpo: Optional
     txt = txt.replace("c4r: True", "c4r: False")
     config_path.write_text(txt)
 
+
+def rewrite_jobscript(jobscript_path: Path) -> None:
+    txt = jobscript_path.read_text()
+    txt = txt.replace("~/", "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/")
+    jobscript_path.write_text(txt)
 
 def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
     base = FILES_FROM_IRODS / project
@@ -357,11 +363,12 @@ def setup_family_once(
             shutil.copy2(src, family_dir / src.name)
 
         config_path = family_dir / "config.yaml"
+        jobscript_path = family_dir / "crg2-pacbio.sh"
         hpo = find_hpo(project, family, project_family)
         ped = find_pedigree(project, family, project_family)
         LOG.info("Writing config.yaml (HPO=%s, PED=%s)", str(hpo) if hpo else "None", str(ped) if ped else "None")
         rewrite_config_yaml(config_path, project_family=project_family, hpo=hpo, ped=ped)
-
+        rewrite_jobscript(jobscript_path)
         # Create samples.tsv / units.tsv
         (family_dir / "samples.tsv").write_text("sample\tBAM\tcase_or_control\n")
 
