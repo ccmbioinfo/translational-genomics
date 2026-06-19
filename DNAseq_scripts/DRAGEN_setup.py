@@ -19,10 +19,10 @@ from typing import Optional
 
 logger = logging.getLogger("DRAGEN_setup")
 
-REPO_ROOT_DEFAULT_CPHI_DRAGEN = Path.home() / "CPHI-DRAGEN-anno"
 DEFAULT_CREDS = "PT_credentials.csv"
 
 BASE = Path("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis")
+PIPELINE_ROOT = BASE / "tools"
 HPO_DIR = BASE / "HPO"
 PED_DIR = BASE / "pedigrees"
 ANALYSES_BASE = BASE / "analyses" 
@@ -124,7 +124,7 @@ def rewrite_config_yaml(config_path: Path, cphi: bool, *, family: str, hpo: Opti
     logger.debug("Rewriting config %s (family=%s, hpo=%s, ped=%s)", config_path, family, hpo, ped)
     txt = config_path.read_text()
     txt = txt.replace("FAM-000000", family)
-    txt = txt.replace("~/", "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/")
+    txt = txt.replace("~/", str(PIPELINE_ROOT))
     if cphi:
         txt = txt.replace("cphi: false", "cphi: true")
     else:
@@ -138,6 +138,11 @@ def rewrite_config_yaml(config_path: Path, cphi: bool, *, family: str, hpo: Opti
     else:
         logger.warning("No pedigree file substituted in %s", config_path)
     config_path.write_text(txt)
+
+def rewrite_jobscript(jobscript_path: Path) -> None:
+    txt = jobscript_path.read_text()
+    txt = txt.replace("~/", str(PIPELINE_ROOT))
+    jobscript_path.write_text(txt)
 
 def find_hpo(project: str, family: str, family_norm: str) -> Optional[Path]:
     base = HPO_DIR / project
@@ -221,6 +226,7 @@ def setup_family_once(
         shutil.copy2(src, family_dir / src.name)
 
     config_path = family_dir / "config.yaml"
+    jobscript_path = family_dir / "CPHI_DRAGEN_anno.sh"
     hpo = find_hpo(project, family, family_norm)
     if cphi:
         ped = find_pedigree(DRAGEN_joint_geno_dir, family_pchseq)
@@ -228,10 +234,8 @@ def setup_family_once(
         ped = find_pedigree_nonCPHI(project, family_norm, family)
     logger.debug("Copying pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
     shutil.copy2(ped, family_dir / f"{family_pchseq}.ped")
-    if cphi:
-        rewrite_config_yaml(config_path, cphi, family=family_pchseq, hpo=hpo, ped=ped)
-    else:
-        rewrite_config_yaml(config_path, cphi, family=family_norm, hpo=hpo, ped=ped)
+    rewrite_config_yaml(config_path, cphi, family=family_pchseq, hpo=hpo, ped=ped)
+    rewrite_jobscript(jobscript_path)
 
     (family_dir / "samples.tsv").write_text("sample\tDRAGEN_results_dir\n")
 
@@ -287,7 +291,6 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--project", help="Project ID, e.g. DECODER")
     ap.add_argument("--cphi", default="True", help="True if CPHI/PCHseq sample, otherwise False")
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
-    ap.add_argument("--cphi-dragen-anno", dest="cphi_dragen_anno", type=Path, default=REPO_ROOT_DEFAULT_CPHI_DRAGEN, help="Path to CPHI-DRAGEN-anno repo (default: ~/CPHI-DRAGEN-anno)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
     ap.add_argument(
         "--log-level",
