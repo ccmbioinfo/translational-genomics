@@ -296,9 +296,13 @@ def process_sample(id, fam, auth, pid_url, pedigree_url, project, rename):
         params={"action": "familyinfo", "document_id": pid}
         response = requests.get(pedigree_url, params=params, auth=auth)
         ped_json = response.json()
-        members, proband_id = get_pedigree_info(ped_json)
-        write_pedigree(members, fam, project, rename)
-        pid_proband = requests.get(f"{pid_url}/{proband_id}", auth=auth).json().get('id')
+        if "family" in ped_json and "pedigree" in ped_json:
+            members, proband_id = get_pedigree_info(ped_json)
+            write_pedigree(members, fam, project, rename)
+            pid_proband = requests.get(f"{pid_url}/{proband_id}", auth=auth).json().get('id')
+        else:
+            print(f"No pedigree family information found for {id}; using sample as proband for HPO terms")
+            pid_proband = pid
         HPO_ids = get_HPO_IDs(pid_proband)
         print(f"Number of HPO terms for {id}: {len(HPO_ids)}")
         HPO_df = get_HPO_gene_mapping(HPO_ids)
