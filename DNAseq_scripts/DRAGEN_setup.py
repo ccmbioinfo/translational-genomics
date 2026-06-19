@@ -115,7 +115,7 @@ def init_existing_family_dirs(analysis_rows: list[AnalysisRow], analysis_dir: Pa
         family_dir = analysis_dir / family_norm / f"DRAGEN_{today}"
         if family_dir.is_dir():
             samples_tsv = family_dir / "samples.tsv"
-            samples_tsv.write_text("sample\tDRAGEN_results_dir\n")
+            samples_tsv.write_text("sample\tCRAM\tSTR\tmetrics\n")
             logger.debug("Reset samples.tsv in existing dir: %s", family_dir)
             reset_count += 1
     logger.info("Reset samples.tsv for %d existing family dir(s)", reset_count)
@@ -124,11 +124,11 @@ def rewrite_config_yaml(config_path: Path, cphi: bool, *, family: str, hpo: Opti
     logger.debug("Rewriting config %s (family=%s, hpo=%s, ped=%s)", config_path, family, hpo, ped)
     txt = config_path.read_text()
     txt = txt.replace("FAM-000000", family)
-    txt = txt.replace("~/", str(PIPELINE_ROOT))
+    txt = txt.replace("~", str(PIPELINE_ROOT))
     if cphi:
         txt = txt.replace("cphi: false", "cphi: true")
     else:
-        txt = txt.replace(' dragen_output_schema: ""', 'dragen_output_schema: "modified"')
+        txt = txt.replace('dragen_output_schema: ""', 'dragen_output_schema: "modified"')
     if hpo is not None:
         txt = txt.replace('hpo: ""', f'hpo: "{hpo}"')
     else:
@@ -141,7 +141,7 @@ def rewrite_config_yaml(config_path: Path, cphi: bool, *, family: str, hpo: Opti
 
 def rewrite_jobscript(jobscript_path: Path) -> None:
     txt = jobscript_path.read_text()
-    txt = txt.replace("~/", str(PIPELINE_ROOT))
+    txt = txt.replace("~", str(PIPELINE_ROOT))
     jobscript_path.write_text(txt)
 
 def find_hpo(project: str, family: str, family_norm: str) -> Optional[Path]:
@@ -191,7 +191,6 @@ def setup_family_once(
     family_dir: Path,
     lims: str,
     cphi: bool,
-    cphi_dragen_anno: Path,
     today: str,
 ) -> None:
     """
@@ -216,8 +215,8 @@ def setup_family_once(
     ensure_dir(family_dir)
 
     for src in [
-        cphi_dragen_anno / "config" / "config.yaml",
-        cphi_dragen_anno / "workflow" / "CPHI_DRAGEN_anno.sh",
+        PIPELINE_ROOT / "CPHI-DRAGEN-anno"/ "config" / "config.yaml",
+        PIPELINE_ROOT / "CPHI-DRAGEN-anno" / "workflow" / "CPHI_DRAGEN_anno.sh",
     ]:
         if not src.exists():
             logger.error("Missing pipeline file: %s", src)
@@ -234,10 +233,13 @@ def setup_family_once(
         ped = find_pedigree_nonCPHI(project, family_norm, family)
     logger.debug("Copying pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
     shutil.copy2(ped, family_dir / f"{family_pchseq}.ped")
-    rewrite_config_yaml(config_path, cphi, family=family_pchseq, hpo=hpo, ped=ped)
+    if cphi:
+        rewrite_config_yaml(config_path, cphi, family=family_pchseq, hpo=hpo, ped=ped)
+    else:
+        rewrite_config_yaml(config_path, cphi, family=family_norm, hpo=hpo, ped=ped)
     rewrite_jobscript(jobscript_path)
 
-    (family_dir / "samples.tsv").write_text("sample\tDRAGEN_results_dir\n")
+    (family_dir / "samples.tsv").write_text("sample\tCRAM\tSTR\tmetrics\n")
 
     units_tsv = family_dir / "units.tsv"
     units_tsv.write_text("family\tsmall_variant_vcf\tSV_vcf\tCNV_vcf\n")
@@ -276,12 +278,25 @@ def add_sample_inputs(
     if cphi:
         dragen_results_dir_sample = PCHSEQ_DIR / PROJECT_DICT[project] / lims / f"{sequence_id}" 
     else:
-        dragen_results_dir_sample = f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/"
+        dragen_results_dir_sample = Path(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/")
     if not Path(dragen_results_dir_sample).exists():
         raise FileNotFoundError(f"DRAGEN results dir does not exist: {dragen_results_dir_sample}")
     logger.info("Adding sample %s -> %s/samples.tsv", sequence_id, family_dir)
     with (family_dir / "samples.tsv").open("a") as out:
-        out.write(f"{sequence_id}\t{dragen_results_dir_sample}\n")
+        if cphi:
+            CRAM = dragen_results_dir_sample/ "output" / f"{sequence_id}.cram"
+            STR = dragen_results_dir_sample/ "output" / f"{sequence_id}.repeats.vcf.gz"
+        else:
+            CRAM = dragen_results_dir_sample / f"{sequence_id}.cram"
+            STR = dragen_results_dir_sample / f"{sequence_id}.repeats.vcf.gz"
+        metrics = dragen_results_dir_sample / f"{sequence_id}.metrics.tsv"
+        if not Path(CRAM).exists():
+            raise FileNotFoundError(f"CRAM file does not exist: {CRAM}")
+        if not Path(STR).exists():
+            raise FileNotFoundError(f"STR file does not exist: {STR}")
+        if not Path(metrics).exists():
+            raise FileNotFoundError(f"metrics file does not exist: {metrics}")
+        out.write(f"{sequence_id}\t{CRAM}\t{STR}\t{metrics}\n")
 
 
 
@@ -362,7 +377,6 @@ def main(argv: list[str]) -> int:
                 family_pchseq=family_pchseq,
                 family_dir=family_dir,
                 cphi=cphi,
-                cphi_dragen_anno=args.cphi_dragen_anno,
                 today=today,
             )
 
