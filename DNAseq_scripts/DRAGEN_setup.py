@@ -120,15 +120,14 @@ def init_existing_family_dirs(analysis_rows: list[AnalysisRow], analysis_dir: Pa
             reset_count += 1
     logger.info("Reset samples.tsv for %d existing family dir(s)", reset_count)
 
-def rewrite_config_yaml(config_path: Path, cphi: bool, *, family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
+def rewrite_config_yaml(config_path: Path, cphi: bool, DRAGEN_version: str, family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
     logger.debug("Rewriting config %s (family=%s, hpo=%s, ped=%s)", config_path, family, hpo, ped)
     txt = config_path.read_text()
     txt = txt.replace("FAM-000000", family)
     txt = txt.replace("~", str(PIPELINE_ROOT))
-    if cphi:
-        txt = txt.replace("cphi: false", "cphi: true")
-    else:
-        txt = txt.replace('dragen_output_schema: ""', 'dragen_output_schema: "modified"')
+    if not cphi:
+        if DRAGEN_version != "4.4.6":
+            txt = txt.replace('dragen_output_schema: ""', 'dragen_output_schema: "modified"')
     if hpo is not None:
         txt = txt.replace('hpo: ""', f'hpo: "{hpo}"')
     else:
@@ -192,6 +191,7 @@ def setup_family_once(
     lims: str,
     cphi: bool,
     today: str,
+    DRAGEN_version: str,
 ) -> None:
     """
     Ensure family dir exists and has config + units.tsv + samples.tsv, plus cnv/str dirs.
@@ -234,9 +234,9 @@ def setup_family_once(
     logger.debug("Copying pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
     shutil.copy2(ped, family_dir / f"{family_pchseq}.ped")
     if cphi:
-        rewrite_config_yaml(config_path, cphi, family=family_pchseq, hpo=hpo, ped=ped)
+        rewrite_config_yaml(config_path, cphi, DRAGEN_version, family=family_pchseq, hpo=hpo, ped=ped)
     else:
-        rewrite_config_yaml(config_path, cphi, family=family_norm, hpo=hpo, ped=ped)
+        rewrite_config_yaml(config_path, cphi, DRAGEN_version, family=family_norm, hpo=hpo, ped=ped)
     rewrite_jobscript(jobscript_path)
 
     (family_dir / "samples.tsv").write_text("sample\tCRAM\tSTR\tmetrics\n")
@@ -305,6 +305,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--analyses", type=Path, help="Path to sample metadata TSV")
     ap.add_argument("--project", help="Project ID, e.g. DECODER")
     ap.add_argument("--cphi", default="True", help="True if CPHI/PCHseq sample, otherwise False")
+    ap.add_argument("--DRAGEN_version", default="4.4.6", help="DRAGEN version, e.g. 4.4.6")
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
     ap.add_argument(
@@ -378,6 +379,7 @@ def main(argv: list[str]) -> int:
                 family_dir=family_dir,
                 cphi=cphi,
                 today=today,
+                DRAGEN_version=args.DRAGEN_version,
             )
 
             add_sample_inputs(
