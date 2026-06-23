@@ -120,15 +120,14 @@ def init_existing_family_dirs(analysis_rows: list[AnalysisRow], analysis_dir: Pa
             reset_count += 1
     logger.info("Reset samples.tsv for %d existing family dir(s)", reset_count)
 
-def rewrite_config_yaml(config_path: Path, cphi: bool, *, family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
+def rewrite_config_yaml(config_path: Path, cphi: bool, DRAGEN_version: str, family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
     logger.debug("Rewriting config %s (family=%s, hpo=%s, ped=%s)", config_path, family, hpo, ped)
     txt = config_path.read_text()
     txt = txt.replace("FAM-000000", family)
     txt = txt.replace("~", str(PIPELINE_ROOT))
-    if cphi:
-        txt = txt.replace("cphi: false", "cphi: true")
-    else:
-        txt = txt.replace('dragen_output_schema: ""', 'dragen_output_schema: "modified"')
+    if not cphi:
+        if DRAGEN_version != "4.4.6":
+            txt = txt.replace('dragen_output_schema: ""', 'dragen_output_schema: "modified"')
     if hpo is not None:
         txt = txt.replace('hpo: ""', f'hpo: "{hpo}"')
     else:
@@ -160,10 +159,12 @@ def find_hpo(project: str, family: str, family_norm: str) -> Optional[Path]:
         logger.debug("HPO file for family=%s: %s", family, hit)
     return hit
 
-def find_pedigree(DRAGEN_joint_geno_dir: Path, family_pchseq: str) -> Optional[Path]:
+def find_pedigree(DRAGEN_joint_geno_dir: Path, family_pchseq: str, sequence_id: str, family_dir: Path) -> Optional[Path]:
     ped = DRAGEN_joint_geno_dir / f"{family_pchseq}.ped"
-    if not ped.exists():
-        logger.warning("Expected pedigree not found: %s", ped)
+    if not ped.exists(): # singleton
+        logger.warning("Expected pedigree not found, assuming singleton sample")
+        ped = None
+
     return ped
 
 def find_pedigree_nonCPHI(project: str, family_norm: str, family: str) -> Optional[Path]:
@@ -189,9 +190,11 @@ def setup_family_once(
     family_norm: str,
     family_pchseq: str,
     family_dir: Path,
+    sequence_id: str,
     lims: str,
     cphi: bool,
     today: str,
+    DRAGEN_version: str,
 ) -> None:
     """
     Ensure family dir exists and has config + units.tsv + samples.tsv, plus cnv/str dirs.
@@ -199,9 +202,16 @@ def setup_family_once(
     """
     if cphi:
         DRAGEN_joint_geno_dir = PCHSEQ_DIR / PROJECT_DICT[project] / f"{lims}_family" / family_pchseq / "output" 
-        sequence_variant_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.hard-filtered.vcf.gz"
-        SV_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.sv.vcf.gz"
-        CNV_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.cnv.vcf.gz"
+        DRAGEN_singleton_dir = PCHSEQ_DIR / PROJECT_DICT[project] / f"{lims}" / f"{sequence_id}" / "output"
+        if DRAGEN_joint_geno_dir.exists():
+            sequence_variant_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.hard-filtered.vcf.gz"
+            SV_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.sv.vcf.gz"
+            CNV_vcf = DRAGEN_joint_geno_dir / f"{family_pchseq}.cnv.vcf.gz"
+        else:
+            logger.info("DRAGEN joint geno dir does not exist, assuming singleton sample")
+            sequence_variant_vcf = DRAGEN_singleton_dir / f"{sequence_id}.hard-filtered.vcf.gz"
+            SV_vcf = DRAGEN_singleton_dir / f"{sequence_id}.sv.vcf.gz"
+            CNV_vcf = DRAGEN_singleton_dir / f"{sequence_id}.cnv.vcf.gz"
     else:
         sequence_variant_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*hard-filtered.vcf.gz")[0]
         SV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*sv.with-inv.vcf.gz")[0]
@@ -228,15 +238,23 @@ def setup_family_once(
     jobscript_path = family_dir / "CPHI_DRAGEN_anno.sh"
     hpo = find_hpo(project, family, family_norm)
     if cphi:
-        ped = find_pedigree(DRAGEN_joint_geno_dir, family_pchseq)
+        ped = find_pedigree(DRAGEN_joint_geno_dir, family_pchseq, sequence_id, family_dir)
     else:
         ped = find_pedigree_nonCPHI(project, family_norm, family)
-    logger.debug("Copying pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
-    shutil.copy2(ped, family_dir / f"{family_pchseq}.ped")
+    
+    if ped:
+        logger.debug("Copying pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
+        shutil.copy2(ped, family_dir / f"{family_pchseq}.ped")
+    else: 
+        logger.debug("Writing singleton pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
+        ped = family_dir / f"{family_pchseq}.ped"
+        with ped.open("w") as f:
+            f.write(f"{family_pchseq}\t{sequence_id}\t0\t0\t0\t2\n")
+
     if cphi:
-        rewrite_config_yaml(config_path, cphi, family=family_pchseq, hpo=hpo, ped=ped)
+        rewrite_config_yaml(config_path, cphi, DRAGEN_version, family=family_pchseq, hpo=hpo, ped=ped)
     else:
-        rewrite_config_yaml(config_path, cphi, family=family_norm, hpo=hpo, ped=ped)
+        rewrite_config_yaml(config_path, cphi, DRAGEN_version, family=family_norm, hpo=hpo, ped=ped)
     rewrite_jobscript(jobscript_path)
 
     (family_dir / "samples.tsv").write_text("sample\tCRAM\tSTR\tmetrics\n")
@@ -305,6 +323,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--analyses", type=Path, help="Path to sample metadata TSV")
     ap.add_argument("--project", help="Project ID, e.g. DECODER")
     ap.add_argument("--cphi", default="True", help="True if CPHI/PCHseq sample, otherwise False")
+    ap.add_argument("--DRAGEN_version", default="4.4.6", help="DRAGEN version, e.g. 4.4.6")
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
     ap.add_argument(
@@ -376,8 +395,10 @@ def main(argv: list[str]) -> int:
                 family_norm=family_norm,
                 family_pchseq=family_pchseq,
                 family_dir=family_dir,
+                sequence_id=sequence_id,
                 cphi=cphi,
                 today=today,
+                DRAGEN_version=args.DRAGEN_version,
             )
 
             add_sample_inputs(
