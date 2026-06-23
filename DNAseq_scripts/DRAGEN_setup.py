@@ -213,9 +213,19 @@ def setup_family_once(
             SV_vcf = DRAGEN_singleton_dir / f"{sequence_id}.sv.vcf.gz"
             CNV_vcf = DRAGEN_singleton_dir / f"{sequence_id}.cnv.vcf.gz"
     else:
-        sequence_variant_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*hard-filtered.vcf.gz")[0]
-        SV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*sv.with-inv.vcf.gz")[0]
-        CNV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*cnv.vcf.gz")[0]
+        if DRAGEN_version == "4.4.6":
+            SV_prefix = "sv"
+        else:
+            SV_prefix = "sv.with-inv"
+        try:
+            sequence_variant_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*hard-filtered.vcf.gz")[0]
+            SV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*{SV_prefix}.vcf.gz")[0]
+            CNV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*cnv.vcf.gz")[0]
+        except IndexError:
+            logger.info("FAM-prefixed VCFs not found, assuming singleton sample")
+            sequence_variant_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/{family}*hard-filtered.vcf.gz")[0]
+            SV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/{family}*{SV_prefix}.vcf.gz")[0]
+            CNV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/{family}*cnv.vcf.gz")[0]
 
     if family_dir.exists():
         logger.info("Family dir already exists, skipping initial setup: %s", family_dir)
@@ -302,8 +312,8 @@ def add_sample_inputs(
     logger.info("Adding sample %s -> %s/samples.tsv", sequence_id, family_dir)
     with (family_dir / "samples.tsv").open("a") as out:
         if cphi:
-            CRAM = dragen_results_dir_sample/ "output" / f"{sequence_id}.cram"
-            STR = dragen_results_dir_sample/ "output" / f"{sequence_id}.repeats.vcf.gz"
+            CRAM = dragen_results_dir_sample / "output" / f"{sequence_id}.cram"
+            STR = dragen_results_dir_sample / "output" / f"{sequence_id}.repeats.vcf.gz"
         else:
             CRAM = dragen_results_dir_sample / f"{sequence_id}.cram"
             STR = dragen_results_dir_sample / f"{sequence_id}.repeats.vcf.gz"
@@ -313,7 +323,14 @@ def add_sample_inputs(
         if not Path(STR).exists():
             raise FileNotFoundError(f"STR file does not exist: {STR}")
         if not Path(metrics).exists():
-            raise FileNotFoundError(f"metrics file does not exist: {metrics}")
+            try:
+                metrics = glob.glob(f"{dragen_results_dir_sample}/{lims}.metrics.tsv")[0] # sometimes the metrics file is per-batch
+                metrics = pd.read_csv(metrics, sep="\t")
+                metrics = metrics[metrics["#sample"] == sequence_id]
+                metrics.to_csv(f"{dragen_results_dir_sample}/{sequence_id}.metrics.tsv", sep="\t", index=False)
+                metrics = dragen_results_dir_sample / f"{sequence_id}.metrics.tsv"
+            except IndexError:
+                raise FileNotFoundError(f"metrics file does not exist: {metrics}")
         out.write(f"{sequence_id}\t{CRAM}\t{STR}\t{metrics}\n")
 
 
