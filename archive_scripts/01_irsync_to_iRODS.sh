@@ -21,7 +21,7 @@ archival_path=$2 # tgnode iRODS base path: /resarchivezone/tgnode/
 module load irods_client/4.3.1
 
 # set iRODS environment variables
-export IRODS_ENVIRONMENT_FILE=/home/mcouse/.irods/irods_environment.json
+export IRODS_ENVIRONMENT_FILE=~/.irods/irods_environment.json
 
 if [ -z "$local_path" ] || [ -z "$archival_path" ]; then
     echo "Usage: $0 <local_path> <archival_path>"
