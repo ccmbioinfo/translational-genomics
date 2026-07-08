@@ -4,7 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=4G
 #SBATCH --output=logs/%x-%j.out
-#SBATCH --mail-user=madeline.couse@sickkids.ca
+#SBATCH --mail-user=your.email@email.ca
 #SBATCH --mail-type=END,FAIL
 
 # This script archives directories on Isilon/PowerScale to iRODS.

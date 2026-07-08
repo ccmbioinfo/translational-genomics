@@ -3,7 +3,7 @@
 
 `01_irsync_to_iRODS.sh`
 
-This script archives directories on Isilon/PowerScale to iRODS using `irsync` with the `-K` flag to perform checksums. Likely overkill, but it performs `irsync` twice to verify that the files have been archived appropriately. 
+This script archives directories on Isilon/PowerScale to iRODS using `irsync` with the `-K` flag to perform checksums. Likely overkill, but it performs `irsync` twice to verify that the files have been archived appropriately. Replace `your.email@email.ca` in the SBATCH directive with your email to receive an email upon completion or failure of the job.
 
 Usage: ` 01_irsync_to_iRODS.sh <local_path> <archival_path>`
 
