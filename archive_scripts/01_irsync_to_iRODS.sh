@@ -40,4 +40,9 @@ echo "irsync complete, syncing again to be safe..."
 
 # just to be safe, sync the files to iRODS again (not sure if this is still an issue, https://github.com/irods/irods/issues/2822)
 irsync -rvK $local_path i:$archival_path
-echo "irsync complete!"
+
+if [ $? -eq 0 ]; then
+    echo "irsync complete!"
+else
+    echo "failed with exit code $?"
+fi
