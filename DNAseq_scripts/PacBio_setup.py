@@ -33,7 +33,7 @@ REPO_ROOT_DEFAULT_CRG2_PACBIO = BASE / "tools" / "crg2-pacbio"
 HPO_DIR = BASE / "HPO"
 PED_DIR = BASE / "pedigrees"
 FILES_FROM_IRODS = BASE / "files_from_irods"
-ANALYSES_BASE = BASE / "analyses" / "test"
+ANALYSES_BASE = BASE / "analyses"
 
 LOG = logging.getLogger("PacBio_setup")
 
