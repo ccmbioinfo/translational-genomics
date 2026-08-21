@@ -9,6 +9,7 @@ set -euo pipefail
 analyses=$1 # Path to sample sheet. Should be tab separated and three columns, Family_ID, sequence_id, Decoder_ID. Family_ID and sequence_id here refer to the IDs after which the files are named.
 # For example family ID is 1745 and sample ID is 1741_SK0125, and the DECODER ID is DSK_007.01. 
 project=$2 # e.g genesteps or DECODER
+cphi=$3 # boolean flag to indicate if the analysis is for CPHI (True or False)
 
 # Input validation
 if [ -z $analyses ]; then
@@ -21,4 +22,4 @@ if [ -z $project ]; then
 	exit 1
 fi
 
-python3 PacBio_setup.py --analyses $analyses --project $project
+python3 PacBio_setup.py --analyses $analyses --project $project --cphi $cphi
