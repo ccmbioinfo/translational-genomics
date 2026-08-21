@@ -231,8 +231,7 @@ def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
     return picked
 
 def pick_deepvariant_cphi(project: str, lims: str,  family_pchseq: str, sequence_id: str) -> Path:
-    project = PCHSEQ_PROJECT_DICT[project]
-    base = PCHSEQ_DIR / project / lims / family_pchseq / "humanwgs"
+    base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
     picked = base / f"{family_pchseq}-cohort.joint.GRCh38.small_variants.phased.vcf.gz"
     print(f"picked: {picked}")
     if not picked.exists():
@@ -265,8 +264,7 @@ def pick_sv(project: str, family: str, sequence_id: str) -> Path:
     return picked
 
 def pick_sv_cphi(project: str, lims: str, family_pchseq: str, sequence_id: str) -> Path:
-    project = PCHSEQ_PROJECT_DICT[project]
-    base = PCHSEQ_DIR / project / lims / family_pchseq / "humanwgs"
+    base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
     picked = base / f"{family_pchseq}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz"
     if not picked.exists():
         picked = base / f"{sequence_id}.GRCh38.structural_variants.phased.vcf.gz" # singleton sample, so no joint-genotyped VCF
@@ -287,8 +285,7 @@ def find_hpo(project: str, family: str, project_family: str) -> Optional[Path]:
     return None
 
 def find_pedigree(project: str, lims: str, family_pchseq: str) -> Optional[Path]:
-    project = PCHSEQ_PROJECT_DICT[project]
-    base = PCHSEQ_DIR / project / lims / family_pchseq / "humanwgs"
+    base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
     ped = base / f"{family_pchseq}-cohort.ped"
     if not ped.exists(): # singleton
         LOG.warning("Expected pedigree not found, assuming singleton sample")
@@ -446,8 +443,7 @@ def add_sample_inputs(
 ) -> None:
     # samples.tsv
     if cphi:
-        project = PCHSEQ_PROJECT_DICT[project]
-        base = PCHSEQ_DIR / project / lims / family_pchseq / "humanwgs"
+        base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
         bam = base / f"{sequence_id}.GRCh38.haplotagged.bam"
         project_sample = sequence_id
     else:
@@ -569,6 +565,10 @@ def _configure_logging(*, level: str = "INFO", log_file: Optional[Path] = None) 
     fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
     logging.basicConfig(level=numeric, format=fmt, handlers=handlers)
 
+def get_PCHSEQ_fam_dir(project: str, lims: str, family_pchseq: str) -> Path:
+    project = PCHSEQ_PROJECT_DICT[project]
+    base = PCHSEQ_DIR / project / lims / family_pchseq / "humanwgs"
+    return base
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Set up crg2-pacbio analysis directories for PacBio inputs.")
