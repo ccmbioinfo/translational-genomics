@@ -147,7 +147,7 @@ def normalize_project_id(family: str, project_id: str) -> str:
 def project_family_from_project_id(project_id: str) -> str:
     return project_id.split("_", 1)[0]
 
-
+# Not being used anymore
 def project_sample_from_project_id(project_id: str) -> str:
     parts = project_id.split("_", 2)
     if len(parts) < 2:
@@ -397,7 +397,9 @@ def add_sample_inputs(
             bam = glob.glob(f"{FILES_FROM_IRODS}/{project}/{sequence_id}*GRCh38.aligned.haplotagged.bam")[0] # older pipeline runs
         except IndexError:
             raise FileNotFoundError(f"No BAM found for {sequence_id}")
-    project_sample = project_sample_from_project_id(project_id_norm)
+    # crg2-pacbio now expects the complete VCF/PED sample ID in samples.tsv,
+    # rather than only the participant suffix (for example, DSK007_03 vs 03).
+    project_sample = project_id_norm
     LOG.info("Adding sample to samples.tsv: %s (bam=%s)", project_sample, bam)
     with (family_dir / "samples.tsv").open("a") as out:
         out.write(f"{project_sample}\t{bam}\n")
@@ -424,23 +426,39 @@ def add_sample_inputs(
         tf.write(f"{sequence_id} {project_id_norm}\n")
         map_seq_to_proj = Path(tf.name)
     try:
-        bcftools_reheader_inplace(deepvariant, map_seq_to_proj)
-        bcftools_reheader_inplace(sv, map_seq_to_proj)
+        # Aviod renaming VCFs.
+        for vcf in (deepvariant, sv):
+            vcf_samples = set(_run(["bcftools", "query", "-l", str(vcf)]).stdout.splitlines())
+            if project_id_norm in vcf_samples:
+                LOG.info("VCF already contains sample %s; not reheadering: %s", project_id_norm, vcf)
+                continue
+            if sequence_id not in vcf_samples:
+                raise RuntimeError(
+                    f"Neither source sample {sequence_id} nor target sample "
+                    f"{project_id_norm} was found in {vcf}"
+                )
+            bcftools_reheader_inplace(vcf, map_seq_to_proj)
+            # Reheadering changes the compressed VCF, so replace any stale index.
+            _run(["tabix", "-f", "-p", "vcf", str(vcf)])
     finally:
         map_seq_to_proj.unlink()
 
     # CNV vcfs: map each VCF's existing sample ID -> normalized project_id
     cnv_vcf = Path(glob.glob(f"{cnv_dir}/*{sequence_id}*.vcf.gz")[0])
     cnv_sample = bcftools_query_sample(cnv_vcf)
-    with tempfile.NamedTemporaryFile("w", delete=False, dir=str(family_dir), prefix="sample_rename_", suffix=".txt") as tf:
-        tf.write(f"{cnv_sample} {project_id_norm}\n")
-        map_cnv_to_proj = Path(tf.name)
-    try:
-        bcftools_reheader_inplace(cnv_vcf, map_cnv_to_proj)
-        LOG.info("Indexing CNV VCF with tabix: %s", cnv_vcf)
-        _run(["tabix", str(cnv_vcf)])
-    finally:
-        map_cnv_to_proj.unlink()
+    # As above, leave an already-correct CNV VCF untouched.
+    if cnv_sample == project_id_norm:
+        LOG.info("CNV VCF already contains sample %s; not reheadering: %s", project_id_norm, cnv_vcf)
+    else:
+        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(family_dir), prefix="sample_rename_", suffix=".txt") as tf:
+            tf.write(f"{cnv_sample} {project_id_norm}\n")
+            map_cnv_to_proj = Path(tf.name)
+        try:
+            bcftools_reheader_inplace(cnv_vcf, map_cnv_to_proj)
+            LOG.info("Indexing CNV VCF with tabix: %s", cnv_vcf)
+            _run(["tabix", "-f", "-p", "vcf", str(cnv_vcf)])
+        finally:
+            map_cnv_to_proj.unlink()
 
 
 def validate_pedigrees(analysis_rows: list[AnalysisRow], analyses_path: Path, project: str) -> None:
