@@ -22,4 +22,9 @@ if [ -z $project ]; then
 	exit 1
 fi
 
+if [ -z $cphi ]; then
+	echo "Please provide a boolean flag to indicate if the analysis is for CPHI (True or False)"
+	exit 1
+fi
+
 python3 PacBio_setup.py --analyses $analyses --project $project --cphi $cphi
