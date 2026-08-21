@@ -24,10 +24,10 @@ from pathlib import Path
 from typing import Iterable, Optional, Union
 
 
-REPO_ROOT_DEFAULT_CRG2_PACBIO = Path.home() / "crg2-pacbio"
 DEFAULT_CREDS = "PT_credentials.csv"
 
 BASE = Path("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis")
+REPO_ROOT_DEFAULT_CRG2_PACBIO = BASE / "tools" / "crg2-pacbio"
 HPO_DIR = BASE / "HPO"
 PED_DIR = BASE / "pedigrees"
 FILES_FROM_IRODS = BASE / "files_from_irods"
@@ -511,7 +511,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--analyses", type=Path, help="Path to sample metadata TSV")
     ap.add_argument("--project", help="Project ID, e.g. DECODER")
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
-    ap.add_argument("--crg2-pacbio", dest="crg2_pacbio", type=Path, default=REPO_ROOT_DEFAULT_CRG2_PACBIO, help="Path to crg2-pacbio repo (default: ~/crg2-pacbio)")
+    ap.add_argument("--crg2-pacbio", dest="crg2_pacbio", type=Path, default=REPO_ROOT_DEFAULT_CRG2_PACBIO, help="Path to crg2-pacbio repo (default: /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/crg2-pacbio/)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
     ap.add_argument("--log-level", default="INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR). Default: INFO.")
     ap.add_argument("--log-file", type=Path, default=None, help="Optional path to write logs (in addition to stderr).")
