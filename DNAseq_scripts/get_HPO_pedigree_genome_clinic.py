@@ -4,6 +4,8 @@ from simplejson import JSONDecodeError
 import pandas as pd
 import requests
 
+from utils.hpo_indirect_matcher import get_indirect_hpo_gene_matches, load_references
+
 def sample_id_to_family_id(sample_id: str, project: str) -> str:
     """
     Convert sample ID to family ID
@@ -216,9 +218,19 @@ def get_HPO_IDs(proband_id: str) -> pd.DataFrame:
 
 def hpo_to_gene_mapping(hpo_ids: list) -> pd.DataFrame:
     """Map HPO terms to genes"""
-    hpo_mapping = pd.read_csv("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/download/genes_to_phenotype.txt", sep="\t").drop(columns=["ncbi_gene_id", "frequency", "disease_id"])
+    hpo_mapping = pd.read_csv("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/download/genes_to_phenotype.txt", sep="\t")
+    hpo_json = "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/download/hp.json"
+    hpo_data = load_references(hpo_json, hpo_mapping)
+    hpo_mapping = hpo_mapping.drop(columns=["ncbi_gene_id", "frequency", "disease_id"])
     hpo_mapping = hpo_mapping.drop_duplicates()
-    hpo_agg = hpo_mapping[hpo_mapping["hpo_id"].isin(hpo_ids)].groupby("gene_symbol").agg(lambda x:  ", ".join(x)).reset_index() # get genes associated with patient HPO terms 
+    hpo_agg = hpo_mapping[hpo_mapping["hpo_id"].isin(hpo_ids)].copy() # get genes associated with exact patient HPO terms
+    hpo_agg["HPO Match Score"] = 1.0
+
+    # Add related HPO terms and the genes annotated directly to those terms.
+    indirect_hpo = get_indirect_hpo_gene_matches(hpo_ids, hpo_data)
+    hpo_agg = pd.concat([hpo_agg, indirect_hpo], ignore_index=True) # Combine exact and indirect matches
+    hpo_agg = hpo_agg.sort_values("HPO Match Score", ascending=False)
+    hpo_agg = hpo_agg.drop_duplicates(subset=["gene_symbol", "hpo_id"], keep="first")
 
     return hpo_agg
 
@@ -281,11 +293,11 @@ def get_HPO_gene_mapping(hpo_ids: list) -> pd.DataFrame:
     mask = hpo_agg_ens["gene_symbol"].isin(dup_ens.keys())
     hpo_agg_ens.loc[mask, "ensembl_gene_id"] = hpo_agg_ens.loc[mask, "gene_symbol"].map(dup_ens)
     hpo_agg_ens = hpo_agg_ens.drop_duplicates(subset=["gene_symbol", "hpo_id", "hpo_name", "hgnc_symbol", "ensembl_gene_id"])
-    # get number of patient HPO terms per gene
-    hpo_agg_ens["Number of occurrences"] = hpo_agg_ens["hpo_id"].str.split(",").str.len()
+    # Count the distinct matched HPO terms for each gene.
+    hpo_agg_ens["Number of occurrences"] = hpo_agg_ens.groupby("gene_symbol")["hpo_id"].transform("nunique")
     # rename columns 
     hpo_agg_ens = hpo_agg_ens.rename(columns={"hpo_id": "HPO IDs", "hpo_name": "Features",  "ensembl_gene_id": "Gene ID", "hgnc_symbol": "Gene Symbol"})
-    hpo_agg_ens = hpo_agg_ens[["Gene Symbol", "Gene ID", "Number of occurrences", "Features", "HPO IDs"]]
+    hpo_agg_ens = hpo_agg_ens[["Gene Symbol", "Gene ID", "Number of occurrences", "Features", "HPO IDs", "HPO Match Score"]]
     
     return hpo_agg_ens
 
