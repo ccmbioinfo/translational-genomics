@@ -11,6 +11,11 @@ Important caveats:
 - **The score is not a probability.** It summarizes term relatedness and is intended only as a review aid.
 - **Indirect matching is intentionally somewhat lenient, but not indiscriminate.** The aim is to retain meaningful related findings while rejecting terms whose genes provide essentially no phenotype-based reason for inspection. Contrasting terms on the same clinical axis may therefore be retained for a reviewer to assess.
 
+The approach was inspired by:
+- [Phrank](https://github.com/meng-ma-biomedical-AI/F29_Phrank)
+- [LIRICAL](https://github.com/TheJacksonLaboratory/LIRICAL/tree/master/lirical-core/src/main/java/org/monarchinitiative/lirical/core/likelihoodratio)
+- Lin, D., 1998, July. An information-theoretic definition of similarity. In Icml (Vol. 98, No. 1998, pp. 296-304).
+
 ## 1. Building the HPO graph
 
 HPO Toolkit loads `hp.json` as a DAG. Each live term supplies its ID, name, synonyms, alternative IDs, and broader `is_a` parents, and a term may have multiple parents. The direct parent links are copied and child links are derived so graph traversal can happen in either direction for a term.
