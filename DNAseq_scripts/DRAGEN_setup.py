@@ -191,6 +191,7 @@ def setup_family_once(
     family_pchseq: str,
     family_dir: Path,
     sequence_id: str,
+    project_id: str,
     lims: str,
     cphi: bool,
     today: str,
@@ -200,6 +201,7 @@ def setup_family_once(
     Ensure family dir exists and has config + units.tsv + samples.tsv, plus cnv/str dirs.
     Returns (sequence_variant_vcf, SV_vcf, CNV_vcf, repeat_VCF_dir, VNTR_VCF_dir).
     """
+    singleton = False
     if cphi:
         DRAGEN_joint_geno_dir = PCHSEQ_DIR / PROJECT_DICT[project] / f"{lims}_family" / family_pchseq / "output" 
         DRAGEN_singleton_dir = PCHSEQ_DIR / PROJECT_DICT[project] / f"{lims}" / f"{sequence_id}" / "output"
@@ -223,6 +225,7 @@ def setup_family_once(
             CNV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/FAM*{family}*cnv.vcf.gz")[0]
         except IndexError:
             logger.info("FAM-prefixed VCFs not found, assuming singleton sample")
+            singleton = True
             sequence_variant_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/{family}*hard-filtered.vcf.gz")[0]
             SV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/{family}*{SV_prefix}.vcf.gz")[0]
             CNV_vcf = glob.glob(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/files_from_irods/{project}/{lims}/{family}*cnv.vcf.gz")[0]
@@ -249,12 +252,20 @@ def setup_family_once(
     hpo = find_hpo(project, family, family_norm)
     if cphi:
         ped = find_pedigree(DRAGEN_joint_geno_dir, family_pchseq, sequence_id, family_dir)
+        if ped is None:
+            singleton = True
+            ped = find_pedigree_nonCPHI(project, family_norm, family)
     else:
         ped = find_pedigree_nonCPHI(project, family_norm, family)
     
     if ped:
         logger.debug("Copying pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
         shutil.copy2(ped, family_dir / f"{family_pchseq}.ped")
+        if singleton:
+            ped = family_dir / f"{family_pchseq}.ped"
+            ped_family = family_pchseq if cphi else family_norm
+            ped_rows = ["\t".join([ped_family, *line.split()[1:]]) for line in ped.read_text().splitlines()]
+            ped.write_text(("\n".join(ped_rows) + "\n").replace(project_id, sequence_id))
     else: 
         logger.debug("Writing singleton pedigree %s -> %s", ped, family_dir / f"{family_pchseq}.ped")
         ped = family_dir / f"{family_pchseq}.ped"
@@ -413,6 +424,7 @@ def main(argv: list[str]) -> int:
                 family_pchseq=family_pchseq,
                 family_dir=family_dir,
                 sequence_id=sequence_id,
+                project_id=_strip_cr(r.project_id),
                 cphi=cphi,
                 today=today,
                 DRAGEN_version=args.DRAGEN_version,
