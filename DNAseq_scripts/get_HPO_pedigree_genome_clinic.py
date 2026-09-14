@@ -311,6 +311,8 @@ def process_sample(id, fam, auth, pid_url, pedigree_url, project, rename):
         fam = fam.replace("_", "")
         print(f"Writing HPO file to /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/{project}/{fam}_HPO_{today}.txt")
         HPO_df.to_csv(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/{project}/{fam}_HPO_{today}.txt", sep="\t", index=False)
+        with open(f"/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/HPO/{project}/{fam}_HPO_{today}.txt", "a") as output:
+            output.write(f"# patient_hpo_ids={','.join(HPO_ids)}\n")
     except JSONDecodeError:
         print(f"Error: did not retrieve HPO and pedigree information for {id}")
 
