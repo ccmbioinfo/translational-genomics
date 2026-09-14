@@ -24,10 +24,12 @@ from pathlib import Path
 from typing import Iterable, Optional, Union
 
 
-REPO_ROOT_DEFAULT_CRG2_PACBIO = Path.home() / "crg2-pacbio"
 DEFAULT_CREDS = "PT_credentials.csv"
+PCHSEQ_DIR = Path("/hpf/projects/PCHSeq/")
+PCHSEQ_PROJECT_DICT = {"sickkidsseq": "SickKidsSeq", "genoderm": "SkinGene"}
 
 BASE = Path("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis")
+REPO_ROOT_DEFAULT_CRG2_PACBIO = BASE / "tools" / "crg2-pacbio"
 HPO_DIR = BASE / "HPO"
 PED_DIR = BASE / "pedigrees"
 FILES_FROM_IRODS = BASE / "files_from_irods"
@@ -42,7 +44,8 @@ class AnalysisRow:
     sequence_id: str
     project_id_raw: str
     sample_type: str
-
+    family_pchseq: str
+    lims: str
     @property
     def family_is_header(self) -> bool:
         return self.family == "Family_ID"
@@ -185,9 +188,12 @@ def copy_with_sidecars(src_vcfgz: Path, dest_dir: Path) -> Path:
     return copied_vcfgz
 
 
-def rewrite_config_yaml(config_path: Path, *, project_family: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
+def rewrite_config_yaml(config_path: Path, *, project_family: str, cphi: bool, family_pchseq: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
     txt = config_path.read_text()
-    txt = txt.replace("NA12878", project_family)
+    if cphi:
+        txt = txt.replace("NA12878", family_pchseq)
+    else:
+        txt = txt.replace("NA12878", project_family)
     txt = txt.replace("~/", "/hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/")
     if hpo is not None:
         txt = txt.replace('hpo: ""', f'hpo: "{hpo}"')
@@ -224,6 +230,16 @@ def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
     LOG.debug("Found deepvariant VCF: %s", picked)
     return picked
 
+def pick_deepvariant_cphi(project: str, lims: str,  family_pchseq: str, sequence_id: str) -> Path:
+    base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
+    picked = base / f"{family_pchseq}-cohort.joint.GRCh38.small_variants.phased.vcf.gz"
+    print(f"picked: {picked}")
+    if not picked.exists():
+        picked = base / f"{sequence_id}.GRCh38.small_variants.phased.vcf.gz" # singleton sample, so no joint-genotyped VCF
+    if not picked.exists():
+        raise FileNotFoundError(f"Could not find deepvariant VCF for family={family_pchseq} sequence_id={sequence_id} project={project}")
+    LOG.debug("Found deepvariant VCF: %s", picked)
+    return picked
 
 def pick_sv(project: str, family: str, sequence_id: str) -> Path:
     base = FILES_FROM_IRODS / project
@@ -247,6 +263,16 @@ def pick_sv(project: str, family: str, sequence_id: str) -> Path:
     LOG.debug("Found structural VCF: %s", picked)
     return picked
 
+def pick_sv_cphi(project: str, lims: str, family_pchseq: str, sequence_id: str) -> Path:
+    base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
+    picked = base / f"{family_pchseq}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz"
+    if not picked.exists():
+        picked = base / f"{sequence_id}.GRCh38.structural_variants.phased.vcf.gz" # singleton sample, so no joint-genotyped VCF
+    if not picked.exists():
+        raise FileNotFoundError(f"Could not find structural variants VCF for family={family_pchseq} sequence_id={sequence_id} project={project}")
+    LOG.debug("Found structural VCF: %s", picked)
+    return picked
+
 def find_hpo(project: str, family: str, project_family: str) -> Optional[Path]:
     base = HPO_DIR / project
     if ("DSK" in family) or ("GYM" in family):
@@ -258,8 +284,16 @@ def find_hpo(project: str, family: str, project_family: str) -> Optional[Path]:
         return matches[0] if matches else None
     return None
 
+def find_pedigree(project: str, lims: str, family_pchseq: str) -> Optional[Path]:
+    base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
+    ped = base / f"{family_pchseq}-cohort.ped"
+    if not ped.exists(): # singleton
+        LOG.warning("Expected pedigree not found, assuming singleton sample")
+        ped = None
 
-def find_pedigree(project: str, family: str, project_family: str) -> Optional[Path]:
+    return ped
+
+def find_pedigree_nonCPHI(project: str, family: str, project_family: str) -> Optional[Path]:
     base = PED_DIR / project
     matches = sorted(base.glob(f"{project_family}*"), key=lambda p: p.stat().st_mtime, reverse=True)
     if matches:
@@ -307,7 +341,9 @@ def parse_analysis_tsv(path: Path) -> list[AnalysisRow]:
             sequence_id = _strip_cr(parts[1]) if len(parts) > 1 else ""
             project_id = _strip_cr(parts[2]) if len(parts) > 2 else ""
             sample_type = _strip_cr(parts[3]) if len(parts) > 3 else ""
-            rows.append(AnalysisRow(family=family, sequence_id=sequence_id, project_id_raw=project_id, sample_type=sample_type))
+            lims = _strip_cr(parts[8]) if len(parts) > 8 else ""
+            family_pchseq = _strip_cr(parts[9]) if len(parts) > 9 else ""
+            rows.append(AnalysisRow(family=family, sequence_id=sequence_id, project_id_raw=project_id, sample_type=sample_type, family_pchseq=family_pchseq, lims=lims))
     return rows
 
 
@@ -339,14 +375,20 @@ def setup_family_once(
     project_family: str,
     family_dir: Path,
     crg2_pacbio: Path,
-    today: str,
+    cphi: bool,
+    lims: str,
+    family_pchseq: str,
 ) -> tuple[Path, Path]:
     """
     Ensure family dir exists and has config + units.tsv + samples.tsv, plus cnv/trgt dirs.
     Returns (deepvariant_vcfgz, sv_vcfgz).
     """
-    deepvariant = pick_deepvariant(project, family, sequence_id)
-    sv = pick_sv(project, family, sequence_id)
+    if cphi:
+        deepvariant = pick_deepvariant_cphi(project, lims, family_pchseq, sequence_id)
+        sv = pick_sv_cphi(project, lims, family_pchseq, sequence_id)
+    else:
+        deepvariant = pick_deepvariant(project, family, sequence_id)
+        sv = pick_sv(project, family, sequence_id)
 
     if not family_dir.exists():
         LOG.info("Creating family analysis directory: %s", family_dir)
@@ -365,9 +407,12 @@ def setup_family_once(
         config_path = family_dir / "config.yaml"
         jobscript_path = family_dir / "crg2-pacbio.sh"
         hpo = find_hpo(project, family, project_family)
-        ped = find_pedigree(project, family, project_family)
+        if cphi:
+            ped = find_pedigree(project, lims, family_pchseq)
+        else:
+            ped = find_pedigree_nonCPHI(project, family, project_family)
         LOG.info("Writing config.yaml (HPO=%s, PED=%s)", str(hpo) if hpo else "None", str(ped) if ped else "None")
-        rewrite_config_yaml(config_path, project_family=project_family, hpo=hpo, ped=ped)
+        rewrite_config_yaml(config_path, project_family=project_family, cphi=cphi, family_pchseq=family_pchseq, hpo=hpo, ped=ped)
         rewrite_jobscript(jobscript_path)
         # Create samples.tsv / units.tsv
         (family_dir / "samples.tsv").write_text("sample\tBAM\tcase_or_control\n")
@@ -375,7 +420,10 @@ def setup_family_once(
         units_tsv = family_dir / "units.tsv"
         units_tsv.write_text("family\tplatform\tsmall_variant_vcf\tpbsv_vcf\tcnv_dir\n")
         with units_tsv.open("a") as out:
-            out.write(f"{project_family}\tPACBIO\t{deepvariant}\t{sv}\tcnv/vcfs\n")
+            if cphi:
+                out.write(f"{family_pchseq}\tPACBIO\t{deepvariant}\t{sv}\tcnv/vcfs\n")
+            else:
+                out.write(f"{project_family}\tPACBIO\t{deepvariant}\t{sv}\tcnv/vcfs\n")
 
         ensure_dir(family_dir / "cnv")
     return deepvariant, sv
@@ -389,17 +437,23 @@ def add_sample_inputs(
     project_id_norm: str,
     deepvariant: Path,
     sv: Path,
+    cphi: bool,
+    family_pchseq: str,
+    lims: str,
 ) -> None:
     # samples.tsv
-    bam = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.haplotagged.bam"
-    if not bam.exists():
-        try:
-            bam = glob.glob(f"{FILES_FROM_IRODS}/{project}/{sequence_id}*GRCh38.aligned.haplotagged.bam")[0] # older pipeline runs
-        except IndexError:
-            raise FileNotFoundError(f"No BAM found for {sequence_id}")
-    # crg2-pacbio now expects the complete VCF/PED sample ID in samples.tsv,
-    # rather than only the participant suffix (for example, DSK007_03 vs 03).
-    project_sample = project_id_norm
+    if cphi:
+        base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
+        bam = base / f"{sequence_id}.GRCh38.haplotagged.bam"
+        project_sample = sequence_id
+    else:
+        bam = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.haplotagged.bam"
+        if not bam.exists():
+            try:
+                bam = glob.glob(f"{FILES_FROM_IRODS}/{project}/{sequence_id}*GRCh38.aligned.haplotagged.bam")[0] # older pipeline runs
+            except IndexError:
+                raise FileNotFoundError(f"No BAM found for {sequence_id}")
+        project_sample = project_sample_from_project_id(project_id_norm)
     LOG.info("Adding sample to samples.tsv: %s (bam=%s)", project_sample, bam)
     with (family_dir / "samples.tsv").open("a") as out:
         out.write(f"{project_sample}\t{bam}\n")
@@ -407,7 +461,10 @@ def add_sample_inputs(
     # CNV copy
     cnv_dir = family_dir / "cnv" / "vcfs"
     ensure_dir(cnv_dir)
-    cnv_src_exact = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.hificnv.vcf.gz"
+    if cphi:
+        cnv_src_exact = base / f"{sequence_id}.GRCh38.hificnv.vcf.gz"
+    else:
+        cnv_src_exact = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.hificnv.vcf.gz"
     if cnv_src_exact.exists():
         LOG.info("Copying CNV VCF: %s", cnv_src_exact)
         copy_with_sidecars(cnv_src_exact, cnv_dir)
@@ -422,41 +479,26 @@ def add_sample_inputs(
 
     # Replace sample IDs in VCFs
     # mapping 1: sequence_id -> normalized project_id (deepvariant/sv)
-    with tempfile.NamedTemporaryFile("w", delete=False, dir=str(family_dir), prefix="sample_rename_", suffix=".txt") as tf:
-        tf.write(f"{sequence_id} {project_id_norm}\n")
-        map_seq_to_proj = Path(tf.name)
-    try:
-        # Aviod renaming VCFs.
-        for vcf in (deepvariant, sv):
-            vcf_samples = set(_run(["bcftools", "query", "-l", str(vcf)]).stdout.splitlines())
-            if project_id_norm in vcf_samples:
-                LOG.info("VCF already contains sample %s; not reheadering: %s", project_id_norm, vcf)
-                continue
-            if sequence_id not in vcf_samples:
-                raise RuntimeError(
-                    f"Neither source sample {sequence_id} nor target sample "
-                    f"{project_id_norm} was found in {vcf}"
-                )
-            bcftools_reheader_inplace(vcf, map_seq_to_proj)
-            # Reheadering changes the compressed VCF, so replace any stale index.
-            _run(["tabix", "-f", "-p", "vcf", str(vcf)])
-    finally:
-        map_seq_to_proj.unlink()
+    if not cphi:
+        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(family_dir), prefix="sample_rename_", suffix=".txt") as tf:
+            tf.write(f"{sequence_id} {project_id_norm}\n")
+            map_seq_to_proj = Path(tf.name)
+        try:
+            bcftools_reheader_inplace(deepvariant, map_seq_to_proj)
+            bcftools_reheader_inplace(sv, map_seq_to_proj)
+        finally:
+            map_seq_to_proj.unlink()
 
-    # CNV vcfs: map each VCF's existing sample ID -> normalized project_id
-    cnv_vcf = Path(glob.glob(f"{cnv_dir}/*{sequence_id}*.vcf.gz")[0])
-    cnv_sample = bcftools_query_sample(cnv_vcf)
-    # As above, leave an already-correct CNV VCF untouched.
-    if cnv_sample == project_id_norm:
-        LOG.info("CNV VCF already contains sample %s; not reheadering: %s", project_id_norm, cnv_vcf)
-    else:
+        # CNV vcfs: map each VCF's existing sample ID -> normalized project_id
+        cnv_vcf = Path(glob.glob(f"{cnv_dir}/*{sequence_id}*.vcf.gz")[0])
+        cnv_sample = bcftools_query_sample(cnv_vcf)
         with tempfile.NamedTemporaryFile("w", delete=False, dir=str(family_dir), prefix="sample_rename_", suffix=".txt") as tf:
             tf.write(f"{cnv_sample} {project_id_norm}\n")
             map_cnv_to_proj = Path(tf.name)
         try:
             bcftools_reheader_inplace(cnv_vcf, map_cnv_to_proj)
             LOG.info("Indexing CNV VCF with tabix: %s", cnv_vcf)
-            _run(["tabix", "-f", "-p", "vcf", str(cnv_vcf)])
+            _run(["tabix", str(cnv_vcf)])
         finally:
             map_cnv_to_proj.unlink()
 
@@ -523,13 +565,18 @@ def _configure_logging(*, level: str = "INFO", log_file: Optional[Path] = None) 
     fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
     logging.basicConfig(level=numeric, format=fmt, handlers=handlers)
 
+def get_PCHSEQ_fam_dir(project: str, lims: str, family_pchseq: str) -> Path:
+    project = PCHSEQ_PROJECT_DICT[project]
+    base = PCHSEQ_DIR / project / lims / family_pchseq / "humanwgs"
+    return base
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Set up crg2-pacbio analysis directories for PacBio inputs.")
     ap.add_argument("--analyses", type=Path, help="Path to sample metadata TSV")
     ap.add_argument("--project", help="Project ID, e.g. DECODER")
+    ap.add_argument("--cphi", help="True if CPHI project, False if not")
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
-    ap.add_argument("--crg2-pacbio", dest="crg2_pacbio", type=Path, default=REPO_ROOT_DEFAULT_CRG2_PACBIO, help="Path to crg2-pacbio repo (default: ~/crg2-pacbio)")
+    ap.add_argument("--crg2-pacbio", dest="crg2_pacbio", type=Path, default=REPO_ROOT_DEFAULT_CRG2_PACBIO, help="Path to crg2-pacbio repo (default: /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/crg2-pacbio/)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
     ap.add_argument("--log-level", default="INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR). Default: INFO.")
     ap.add_argument("--log-file", type=Path, default=None, help="Optional path to write logs (in addition to stderr).")
@@ -580,6 +627,9 @@ def main(argv: list[str]) -> int:
 
         family = r.family
         sequence_id = _strip_cr(r.sequence_id)
+        family_pchseq = r.family_pchseq
+        lims = r.lims
+        print(f"family_pchseq: {family_pchseq}")
         LOG.info("Processing family=%s sequence_id=%s project_id=%s sample_type=%s", family, sequence_id, _strip_cr(r.project_id_raw), r.sample_type)
 
         try:
@@ -598,7 +648,9 @@ def main(argv: list[str]) -> int:
             project_family=project_family,
             family_dir=family_dir,
             crg2_pacbio=args.crg2_pacbio,
-            today=today,
+            cphi=args.cphi,
+            lims=lims,
+            family_pchseq=family_pchseq,
         )
 
         add_sample_inputs(
@@ -608,9 +660,12 @@ def main(argv: list[str]) -> int:
             project_id_norm=project_id_norm,
             deepvariant=deepvariant,
             sv=sv,
+            cphi=args.cphi,
+            family_pchseq=family_pchseq,
+            lims=lims,
         )
-
-    validate_pedigrees(rows, args.analyses, args.project)
+    if not args.cphi:
+        validate_pedigrees(rows, args.analyses, args.project)
     LOG.info("Done.")
     return 0
 

@@ -39,12 +39,13 @@ A bash script that calls `PacBio_setup.py` to set up analysis directories and co
 - Takes two arguments:
     - `analyses`: Tab-separated sample sheet with Family_ID, Sample_ID, and Decoder_ID columns
     - `project`: Project name (e.g., genesteps or DECODER)
+    - `cphi`: True if CPHI/PCHSeq project, otherwise False
 - Sets up analysis directories with required pipeline files
 - Configures HPO terms and pedigree information
 - Handles sample renaming and file organization
 
 Usage:
-`sh PacBio_setup.sh <analyses TSV> <project>`
+`sh PacBio_setup.sh <analyses TSV> <project> <cphi>`
 
 ### run_TRGT_repeat_outliers_and_denovo.sh
 Sets up and configures TRGT outlier and de novo repeat analyses for a family:
