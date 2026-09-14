@@ -150,7 +150,7 @@ def normalize_project_id(family: str, project_id: str) -> str:
 def project_family_from_project_id(project_id: str) -> str:
     return project_id.split("_", 1)[0]
 
-
+# Not being used anymore
 def project_sample_from_project_id(project_id: str) -> str:
     parts = project_id.split("_", 2)
     if len(parts) < 2:
