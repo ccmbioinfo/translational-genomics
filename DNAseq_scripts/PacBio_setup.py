@@ -3,7 +3,7 @@
 Python rewrite of PacBio_setup.sh
 
 Sets up crg2-pacbio analysis directories, downloads HPO terms and pedigrees from Phenotips,
-copies per-sample inputs, rewrites sample IDs in VCFs using bcftools, and validates that
+copies per-sample inputs, validates sample IDs in VCFs using bcftools, and checks that
 samples in the analysis TSV are present in the Phenotips pedigree.
 """
 
@@ -302,6 +302,22 @@ def find_pedigree_nonCPHI(project: str, family: str, project_family: str) -> Opt
     return matches[0] if matches else None
 
 
+def copy_pedigree(ped: Path, family_dir: Path, ped_id_to_sample_id: dict[str, str]) -> Path:
+    """
+    Copy a Phenotips PED into the family analysis directory and replace matching PED IDs with the Sample_IDs used by the pipeline.
+    """
+    local_ped = family_dir / ped.name
+    shutil.copy2(ped, local_ped)
+    lines = []
+    for line in local_ped.read_text().splitlines():
+        fields = line.split()
+        for column in (1, 2, 3):
+            fields[column] = ped_id_to_sample_id.get(fields[column], fields[column])
+        lines.append("\t".join(fields))
+    local_ped.write_text("\n".join(lines) + "\n")
+    return local_ped
+
+# Not being used anymore
 def bcftools_reheader_inplace(vcfgz: Path, mapping_file: Path) -> None:
     """
     Equivalent to:
@@ -319,7 +335,7 @@ def bcftools_reheader_inplace(vcfgz: Path, mapping_file: Path) -> None:
     subprocess.run(cmd, shell=True, check=True)
     out_tmp.replace(vcfgz)
 
-
+# Not being used anymore
 def bcftools_query_sample(vcfgz: Path) -> str:
     cp = _run(["bcftools", "query", "-l", str(vcfgz)])
     line = (cp.stdout or "").splitlines()
@@ -373,6 +389,7 @@ def setup_family_once(
     project: str,
     project_id_norm: str,
     project_family: str,
+    ped_id_to_sample_id: dict[str, str],
     family_dir: Path,
     crg2_pacbio: Path,
     cphi: bool,
@@ -411,6 +428,9 @@ def setup_family_once(
             ped = find_pedigree(project, lims, family_pchseq)
         else:
             ped = find_pedigree_nonCPHI(project, family, project_family)
+            if ped is not None:
+                # Phenotips PED IDs may not match sequence IDs, so update only the copy in the project directory.
+                ped = copy_pedigree(ped, family_dir, ped_id_to_sample_id)
         LOG.info("Writing config.yaml (HPO=%s, PED=%s)", str(hpo) if hpo else "None", str(ped) if ped else "None")
         rewrite_config_yaml(config_path, project_family=project_family, cphi=cphi, family_pchseq=family_pchseq, hpo=hpo, ped=ped)
         rewrite_jobscript(jobscript_path)
@@ -453,7 +473,9 @@ def add_sample_inputs(
                 bam = glob.glob(f"{FILES_FROM_IRODS}/{project}/{sequence_id}*GRCh38.aligned.haplotagged.bam")[0] # older pipeline runs
             except IndexError:
                 raise FileNotFoundError(f"No BAM found for {sequence_id}")
-        project_sample = project_sample_from_project_id(project_id_norm)
+        # crg2-pacbio expects the VCF/PED sample ID in samples.tsv. In the
+        # analysis TSV, this is the second column (Sample_ID/sequence_id).
+        project_sample = sequence_id
     LOG.info("Adding sample to samples.tsv: %s (bam=%s)", project_sample, bam)
     with (family_dir / "samples.tsv").open("a") as out:
         out.write(f"{project_sample}\t{bam}\n")
@@ -477,30 +499,12 @@ def add_sample_inputs(
         for m in matches:
             copy_with_sidecars(m, cnv_dir)
 
-    # Replace sample IDs in VCFs
-    # mapping 1: sequence_id -> normalized project_id (deepvariant/sv)
-    if not cphi:
-        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(family_dir), prefix="sample_rename_", suffix=".txt") as tf:
-            tf.write(f"{sequence_id} {project_id_norm}\n")
-            map_seq_to_proj = Path(tf.name)
-        try:
-            bcftools_reheader_inplace(deepvariant, map_seq_to_proj)
-            bcftools_reheader_inplace(sv, map_seq_to_proj)
-        finally:
-            map_seq_to_proj.unlink()
-
-        # CNV vcfs: map each VCF's existing sample ID -> normalized project_id
-        cnv_vcf = Path(glob.glob(f"{cnv_dir}/*{sequence_id}*.vcf.gz")[0])
-        cnv_sample = bcftools_query_sample(cnv_vcf)
-        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(family_dir), prefix="sample_rename_", suffix=".txt") as tf:
-            tf.write(f"{cnv_sample} {project_id_norm}\n")
-            map_cnv_to_proj = Path(tf.name)
-        try:
-            bcftools_reheader_inplace(cnv_vcf, map_cnv_to_proj)
-            LOG.info("Indexing CNV VCF with tabix: %s", cnv_vcf)
-            _run(["tabix", str(cnv_vcf)])
-        finally:
-            map_cnv_to_proj.unlink()
+    # VCF headers must already use the Sample_ID from the analysis TSV; do not reheader source VCFs.
+    cnv_vcf = Path(glob.glob(f"{cnv_dir}/*{sequence_id}*.vcf.gz")[0])
+    for vcf in (deepvariant, sv, cnv_vcf):
+        vcf_samples = set((_run(["bcftools", "query", "-l", str(vcf)]).stdout or "").splitlines())
+        if sequence_id not in vcf_samples:
+            raise RuntimeError(f"Sample {sequence_id} not found in VCF: {vcf}")
 
 
 def validate_pedigrees(analysis_rows: list[AnalysisRow], analyses_path: Path, project: str) -> None:
@@ -574,13 +578,14 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Set up crg2-pacbio analysis directories for PacBio inputs.")
     ap.add_argument("--analyses", type=Path, help="Path to sample metadata TSV")
     ap.add_argument("--project", help="Project ID, e.g. DECODER")
-    ap.add_argument("--cphi", help="True if CPHI project, False if not")
+    ap.add_argument("--cphi", type=str.lower, choices=("true", "false"), help="True if CPHI project, False if not")
     ap.add_argument("--creds", default=DEFAULT_CREDS, help="Phenotips credentials CSV (default: PT_credentials.csv)")
     ap.add_argument("--crg2-pacbio", dest="crg2_pacbio", type=Path, default=REPO_ROOT_DEFAULT_CRG2_PACBIO, help="Path to crg2-pacbio repo (default: /hpf/largeprojects/tgnode/sandbox/mcouse_analysis/tools/crg2-pacbio/)")
     ap.add_argument("--today", default=None, help="Override date stamp (YYYY-MM-DD). Default: today.")
     ap.add_argument("--log-level", default="INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR). Default: INFO.")
     ap.add_argument("--log-file", type=Path, default=None, help="Optional path to write logs (in addition to stderr).")
     args = ap.parse_args(argv)
+    args.cphi = args.cphi == "true"
 
     _configure_logging(level=args.log_level, log_file=args.log_file)
 
@@ -600,6 +605,14 @@ def main(argv: list[str]) -> int:
 
     rows = parse_analysis_tsv(args.analyses)
     LOG.info("Parsed %d row(s) from analysis TSV", len(rows))
+    ped_id_to_sample_id = {}
+    # Map normalized Phenotips PED IDs to the Sample_IDs used by the VCFs and samples.tsv
+    if not args.cphi:
+        ped_id_to_sample_id = {
+            normalize_project_id(r.family, r.project_id_raw): _strip_cr(r.sequence_id)
+            for r in rows
+            if not r.family_is_header
+        }
 
     # Download HPO + pedigrees from Phenotips (mirrors bash)
     LOG.info("Downloading HPO terms + pedigrees from Phenotips")
@@ -646,6 +659,7 @@ def main(argv: list[str]) -> int:
             project=args.project,
             project_id_norm=project_id_norm,
             project_family=project_family,
+            ped_id_to_sample_id=ped_id_to_sample_id,
             family_dir=family_dir,
             crg2_pacbio=args.crg2_pacbio,
             cphi=args.cphi,

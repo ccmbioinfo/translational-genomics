@@ -42,7 +42,9 @@ A bash script that calls `PacBio_setup.py` to set up analysis directories and co
     - `cphi`: True if CPHI/PCHSeq project, otherwise False
 - Sets up analysis directories with required pipeline files
 - Configures HPO terms and pedigree information
-- Handles sample renaming and file organization
+- Uses `Sample_ID` from the analyses TSV in `samples.tsv`
+- For non-CPHI runs, copies the Phenotips PED into the analysis directory and maps PED IDs to `Sample_ID`
+- Requires small-variant, structural-variant, and CNV VCF headers to already contain the corresponding `Sample_ID`; source VCFs are not reheadered
 
 Usage:
 `sh PacBio_setup.sh <analyses TSV> <project> <cphi>`
