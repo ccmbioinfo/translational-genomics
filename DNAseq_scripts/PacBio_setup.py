@@ -27,6 +27,8 @@ from typing import Iterable, Optional, Union
 DEFAULT_CREDS = "PT_credentials.csv"
 PCHSEQ_DIR = Path("/hpf/projects/PCHSeq/")
 PCHSEQ_PROJECT_DICT = {"sickkidsseq": "SickKidsSeq", "genoderm": "SkinGene"}
+WDL4_REFERENCE = "/hpf/largeprojects/ccm_dccforge/dccdipg/Common/annotation_hg38/WDL4_Ref_hg38/GRCh38_GIABv3/human_GRCh38_GIABv3_no_alt_analysis_set_maskedGRC_decoys_MAP2K3_KMT2C_KCNJ18.fasta"
+LEGACY_REFERENCE = "/hpf/largeprojects/ccmbio/nhanafi/c4r/genomes/GIAB/GCA_000001405.15_GRCh38_no_alt_analysis_set_maskedGRC_exclusions_v2.fasta"
 
 BASE = Path("/hpf/largeprojects/tgnode/sandbox/mcouse_analysis")
 REPO_ROOT_DEFAULT_CRG2_PACBIO = BASE / "tools" / "crg2-pacbio"
@@ -188,7 +190,7 @@ def copy_with_sidecars(src_vcfgz: Path, dest_dir: Path) -> Path:
     return copied_vcfgz
 
 
-def rewrite_config_yaml(config_path: Path, *, project_family: str, cphi: bool, family_pchseq: str, hpo: Optional[Path], ped: Optional[Path]) -> None:
+def rewrite_config_yaml(config_path: Path, *, project_family: str, cphi: bool, family_pchseq: str, hpo: Optional[Path], ped: Optional[Path], pipeline: str) -> None:
     txt = config_path.read_text()
     if cphi:
         txt = txt.replace("NA12878", family_pchseq)
@@ -200,6 +202,9 @@ def rewrite_config_yaml(config_path: Path, *, project_family: str, cphi: bool, f
     if ped is not None:
         txt = txt.replace('ped: ""', f'ped: "{ped}"')
     txt = txt.replace("c4r: True", "c4r: False")
+    txt = txt.replace('pipeline: "pacbio"', f'pipeline: "{pipeline}"')
+    if pipeline == "pacbio-legacy":
+        txt = txt.replace(WDL4_REFERENCE, LEGACY_REFERENCE)
     config_path.write_text(txt)
 
 
@@ -215,8 +220,9 @@ def pick_deepvariant(project: str, family: str, sequence_id: str) -> Path:
     candidates = [
         base / f"{family}-cohort.joint.GRCh38.small_variants.phased.vcf.gz",
         base / f"{family_with_DNA}-cohort.joint.GRCh38.small_variants.phased.vcf.gz",
-        base / f"{family}.joint.GRCh38.small_variants.phased.vcf.gz", # TCAG does not always consistently name joint-genotyped VCFs
-        base / f"{sequence_id}.GRCh38.small_variants.phased.vcf.gz", # singleton sample, so no joint-genotyped VCF
+        base / f"{family}.joint.GRCh38*.small_variants.phased.vcf.gz", # TCAG does not always consistently name joint-genotyped VCFs
+        base / f"{family_with_DNA}.joint.GRCh38*.small_variants.phased.vcf.gz",
+        base / f"{sequence_id}.GRCh38*.small_variants.phased.vcf.gz", # singleton sample, so no joint-genotyped VCF
         base / f"{family}-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz", # file naming for older PacBio pipeline runs
         base / f"{sequence_fam}-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz", # file naming for older PacBio pipeline runs
         base / f"{family_with_DNA}-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz", # e.g. DSK_DNA_003-fam.joint.GRCh38.deepvariant.glnexus.phased.vcf.gz
@@ -248,8 +254,9 @@ def pick_sv(project: str, family: str, sequence_id: str) -> Path:
     candidates = [
         base / f"{family}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz",
         base / f"{family_with_DNA}-cohort.joint.GRCh38.structural_variants.phased.vcf.gz",
-        base / f"{family}.joint.GRCh38.structural_variants.phased.vcf.gz",
-        base / f"{sequence_id}.GRCh38.structural_variants.phased.vcf.gz", # singleton sample, so no joint-genotyped VCF
+        base / f"{family}.joint.GRCh38*.structural_variants.phased.vcf.gz",
+        base / f"{family_with_DNA}.joint.GRCh38*.structural_variants.phased.vcf.gz",
+        base / f"{sequence_id}.GRCh38*.structural_variants.phased.vcf.gz", # singleton sample, so no joint-genotyped VCF
         base / f"{family}-fam.joint.GRCh38.pbsv.phased.vcf.gz", # file naming for older PacBio pipeline runs
         base / f"{sequence_fam}-fam.joint.GRCh38.pbsv.phased.vcf.gz", # file naming for older PacBio pipeline runs,
         base / f"{family_with_DNA}-fam.joint.GRCh38.pbsv.phased.vcf.gz", # e.g. DSK_DNA_003-fam.joint.GRCh38.pbsv.phased.vcf.gz
@@ -397,7 +404,7 @@ def setup_family_once(
     family_pchseq: str,
 ) -> tuple[Path, Path]:
     """
-    Ensure family dir exists and has config + units.tsv + samples.tsv, plus cnv/trgt dirs.
+    Ensure family dir exists and has config + units.tsv + samples.tsv, plus the CNV directory.
     Returns (deepvariant_vcfgz, sv_vcfgz).
     """
     if cphi:
@@ -406,6 +413,8 @@ def setup_family_once(
     else:
         deepvariant = pick_deepvariant(project, family, sequence_id)
         sv = pick_sv(project, family, sequence_id)
+    # if sample is not from WDL4.0 use the legacy pipeline version
+    pipeline = "pacbio" if "GRCh38_GIABv3" in deepvariant.name else "pacbio-legacy"
 
     if not family_dir.exists():
         LOG.info("Creating family analysis directory: %s", family_dir)
@@ -432,7 +441,7 @@ def setup_family_once(
                 # Phenotips PED IDs may not match sequence IDs, so update only the copy in the project directory.
                 ped = copy_pedigree(ped, family_dir, ped_id_to_sample_id)
         LOG.info("Writing config.yaml (HPO=%s, PED=%s)", str(hpo) if hpo else "None", str(ped) if ped else "None")
-        rewrite_config_yaml(config_path, project_family=project_family, cphi=cphi, family_pchseq=family_pchseq, hpo=hpo, ped=ped)
+        rewrite_config_yaml(config_path, project_family=project_family, cphi=cphi, family_pchseq=family_pchseq, hpo=hpo, ped=ped, pipeline=pipeline)
         rewrite_jobscript(jobscript_path)
         # Create samples.tsv / units.tsv
         (family_dir / "samples.tsv").write_text("sample\tBAM\tcase_or_control\n")
@@ -445,7 +454,7 @@ def setup_family_once(
             else:
                 out.write(f"{project_family}\tPACBIO\t{deepvariant}\t{sv}\tcnv/vcfs\n")
 
-        ensure_dir(family_dir / "cnv")
+        ensure_dir(family_dir / "cnv" / "vcfs")
     return deepvariant, sv
 
 
@@ -461,13 +470,18 @@ def add_sample_inputs(
     family_pchseq: str,
     lims: str,
 ) -> None:
+    wdl4 = "GRCh38_GIABv3" in deepvariant.name # Samples are from WDL 4.0
+
     # samples.tsv
     if cphi:
         base = get_PCHSEQ_fam_dir(project, lims, family_pchseq)
         bam = base / f"{sequence_id}.GRCh38.haplotagged.bam"
         project_sample = sequence_id
     else:
-        bam = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.haplotagged.bam"
+        # Perfer the WDL4 bam before falling back
+        bam = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38_GIABv3.haplotagged.bam"
+        if not bam.exists():
+            bam = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.haplotagged.bam"
         if not bam.exists():
             try:
                 bam = glob.glob(f"{FILES_FROM_IRODS}/{project}/{sequence_id}*GRCh38.aligned.haplotagged.bam")[0] # older pipeline runs
@@ -480,28 +494,31 @@ def add_sample_inputs(
     with (family_dir / "samples.tsv").open("a") as out:
         out.write(f"{project_sample}\t{bam}\n")
 
-    # CNV copy
-    cnv_dir = family_dir / "cnv" / "vcfs"
-    ensure_dir(cnv_dir)
-    if cphi:
-        cnv_src_exact = base / f"{sequence_id}.GRCh38.hificnv.vcf.gz"
-    else:
-        cnv_src_exact = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.hificnv.vcf.gz"
-    if cnv_src_exact.exists():
-        LOG.info("Copying CNV VCF: %s", cnv_src_exact)
-        copy_with_sidecars(cnv_src_exact, cnv_dir)
-    else:
-        patt = f"hificnv*{sequence_id}*.vcf.gz"
-        matches = sorted((FILES_FROM_IRODS / project).glob(patt))
-        if not matches:
-            raise FileNotFoundError(f"No CNV VCFs found for {sequence_id} (pattern {patt})")
-        LOG.info("Copying %d CNV VCF(s) matching %s", len(matches), patt)
-        for m in matches:
-            copy_with_sidecars(m, cnv_dir)
+    vcfs = (deepvariant, sv)
+    if not wdl4:
+        # CNV copy
+        cnv_dir = family_dir / "cnv" / "vcfs"
+        ensure_dir(cnv_dir)
+        if cphi:
+            cnv_src_exact = base / f"{sequence_id}.GRCh38.hificnv.vcf.gz"
+        else:
+            cnv_src_exact = FILES_FROM_IRODS / project / f"{sequence_id}.GRCh38.hificnv.vcf.gz"
+        if cnv_src_exact.exists():
+            LOG.info("Copying CNV VCF: %s", cnv_src_exact)
+            copy_with_sidecars(cnv_src_exact, cnv_dir)
+        else:
+            patt = f"hificnv*{sequence_id}*.vcf.gz"
+            matches = sorted((FILES_FROM_IRODS / project).glob(patt))
+            if not matches:
+                raise FileNotFoundError(f"No CNV VCFs found for {sequence_id} (pattern {patt})")
+            LOG.info("Copying %d CNV VCF(s) matching %s", len(matches), patt)
+            for m in matches:
+                copy_with_sidecars(m, cnv_dir)
+        cnv_vcf = Path(glob.glob(f"{cnv_dir}/*{sequence_id}*.vcf.gz")[0])
+        vcfs += (cnv_vcf,)
 
     # VCF headers must already use the Sample_ID from the analysis TSV; do not reheader source VCFs.
-    cnv_vcf = Path(glob.glob(f"{cnv_dir}/*{sequence_id}*.vcf.gz")[0])
-    for vcf in (deepvariant, sv, cnv_vcf):
+    for vcf in vcfs:
         vcf_samples = set((_run(["bcftools", "query", "-l", str(vcf)]).stdout or "").splitlines())
         if sequence_id not in vcf_samples:
             raise RuntimeError(f"Sample {sequence_id} not found in VCF: {vcf}")
